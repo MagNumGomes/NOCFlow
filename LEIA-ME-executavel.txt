@@ -1,33 +1,38 @@
-ORQUESTRADOR SRE NOC — LOCAL PRIMEIRO
+NOCFLOW 2.1.0 — LOCAL PRIMEIRO
 
 ABRIR
-Abra OrquestradorNOC.exe. Mantenha _internal junto dele.
+Abra NOCFlow.exe. Mantenha _internal junto dele.
 Python e VS Code não são necessários. Microsoft Edge é necessário.
 O fluxo principal funciona sem chaves de IA.
 
 INSTALAR / ATUALIZAR A EXTENSÃO
-1. No NOC, menu "... > Instalar extensão do Edge".
+1. No NOCFlow, menu "... > Instalar extensão do Edge".
 2. Em edge://extensions/, ative Modo do desenvolvedor.
-3. Carregue a pasta indicada: %LOCALAPPDATA%\AutomacaoNOC\edge_extension.
+3. Carregue a pasta indicada: %LOCALAPPDATA%\NOCFlow\edge_extension.
 4. Use o perfil já logado no Zabbix e Movidesk.
-Ao atualizar, abra o NOC, recarregue a extensão e as páginas dos sites.
+Ao atualizar, abra o NOCFlow, recarregue a extensão e as páginas dos sites.
 
 IMPORTAR ALERTAS SEM IA
-1. No aplicativo, menu "... > Conectar Zabbix".
-2. No Zabbix, expanda "NOC — dados locais, sem IA" e use "Enviar ao NOC".
-Alternativa: "Copiar dados para NOC" no navegador e "Importar dados" no NOC.
+1. No aplicativo, "Conectar" na faixa Zabbix; confira ali o estado e o prazo.
+2. No Zabbix, expanda "NOCFlow — Zabbix e Movidesk" e use "Enviar ao NOCFlow".
+Alternativa: "Mais opções > Copiar dados para NOCFlow" e "Importar dados" no NOCFlow.
 Os userscripts Tampermonkey estão na pasta tampermonkey deste pacote.
 Use extensão ou userscript equivalente na página para evitar botões duplicados.
 Na lista de problemas, selecione até 100 eventos para importar em lote.
 Reconecte após reiniciar o aplicativo/navegador ou depois de 12 horas.
 
 FILA E MOVIDESK
-Cada incidente guarda campos e print próprios. Troque pelo seletor no topo.
-"+ Novo" preserva os anteriores; "... > Remover" exclui apenas o item local.
-Recapturas da mesma instância + eventid atualizam o mesmo incidente.
-Clique em "Abrir Movidesk", revise, cole o print e salve manualmente.
+"Fila" abre busca, filtros, etapas e contadores; "Voltar" retorna ao editor.
+"Próximo" avança aos pendentes. Arquive ou reabra atendimentos pela fila.
+"+ Novo" preserva os anteriores; "... > Desfazer remoção" recupera itens removidos nesta sessão.
+Recapturas da mesma instância + eventid preservam revisões. Compare diferenças em "Pendências".
+Alertas recebidos pela extensão mantêm sua edição; abra-os pelo aviso de recebidos.
+"Criar ticket" prepara o formulário; "Voltar ao formulário" retoma a guia existente;
+"Abrir ticket #..." abre o chamado já vinculado. Revise os resultados por campo em
+"Pendências", complete Solicitante/Serviço e salve manualmente no Movidesk.
 O número retorna ao incidente original, mesmo que outro esteja selecionado.
-Mantenha o NOC aberto; se fechar/reiniciar ou expirar, digite o número manualmente.
+Mantenha o NOCFlow aberto; se fechar/reiniciar ou expirar, digite o número manualmente.
+Para preparar outro formulário após falha, confira a guia anterior e use "Pendências".
 
 PRINT E OCR
 Capture com Win+Shift+S e use "Ler print".
@@ -45,18 +50,29 @@ GEMINI_MAX_OUTPUT_TOKENS e GROQ_MAX_COMPLETION_TOKENS limitam a saída,
 não os tokens de entrada nem a cota total da conta.
 
 COMUNICADOS E EVIDÊNCIAS
-WhatsApp, Teams e e-mail são templates locais, na aba Comunicar.
-No e-mail, copie assunto, corpo e recorte do print.
-No Zabbix também há cópia de imagem sob demanda e e-mail + imagem.
+Na aba Comunicar, escolha WhatsApp, Teams ou e-mail e o modelo: Abertura normal
+(padrão, sem saudação) ou Abertura inicial (com saudação de horário no WhatsApp).
+O horário da última cópia é salvo por canal; copiar não confirma o envio.
+Use a rolagem ou "Ampliar prévia" para conferir o texto completo.
+Em Comunicar > WhatsApp, informe Seu nome e clique em Salvar nome uma vez.
+O cabeçalho ficará como "João - Equipe NOC", inclusive após reabrir o aplicativo.
+Use "Editar nome" para alterar a identificação salva.
+Na aba Evidências, adicione/amplie o print, salve os recortes e copie a imagem.
+Os recortes sobrevivem à troca de incidente e ao reinício. Escolha explicitamente
+"Print completo" ou "Recorte" em "Imagem no ticket".
+No e-mail, copie assunto e corpo em Comunicar; copie o recorte em Evidências.
+No Zabbix há "Copiar link + imagem", além de imagem e e-mail + imagem.
+No Movidesk, "Copiar template" copia número, assunto e link.
 Para evidência exata dos pixels da tela, use Win+Shift+S.
 
 DADOS E CONFIGURAÇÃO
 Use Abrir configuracoes.cmd. Reinicie após editar o .env.
-Configuração: %LOCALAPPDATA%\AutomacaoNOC\.env
-Fila, prints e logs: %LOCALAPPDATA%\AutomacaoNOC\.noc_data
-O login permanece no Edge. Fechar o NOC não fecha suas guias.
+Configuração: %LOCALAPPDATA%\NOCFlow\.env
+Fila, prints e logs: %LOCALAPPDATA%\NOCFlow\.noc_data
+O login permanece no Edge. Fechar o NOCFlow não fecha suas guias.
 
 ATUALIZAR / DISTRIBUIR
-Copie a pasta OrquestradorNOC inteira. Os dados locais sobrevivem a builds.
+Copie a pasta NOCFlow inteira. Os dados locais sobrevivem a builds.
 Rascunhos antigos são migrados para a fila no próximo salvamento.
-Veja manual-noc.md neste pacote para o passo a passo e solução de problemas.
+Veja manual.md neste pacote para o passo a passo e solução de problemas.
+README.md apresenta o projeto; docs/arquitetura.md descreve sua estrutura técnica.

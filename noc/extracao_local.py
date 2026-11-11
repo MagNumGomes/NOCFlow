@@ -5,7 +5,7 @@ import hashlib
 import re
 import unicodedata
 
-from incidentes import CAMPOS_EVENTO
+from .incidentes import CAMPOS_EVENTO
 
 ROTULOS = {
     "host": "servidor", "servidor": "servidor", "trigger": "alerta", "event name": "alerta",

@@ -1,6 +1,6 @@
 @echo off
 setlocal
-set "dados=%LOCALAPPDATA%\AutomacaoNOC"
+set "dados=%LOCALAPPDATA%\NOCFlow"
 if not exist "%dados%" mkdir "%dados%"
 if not exist "%dados%\.env" (
     if exist "%~dp0_internal\.env.example" (

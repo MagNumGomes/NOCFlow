@@ -5,11 +5,11 @@
   chrome.runtime.sendMessage({tipo: "abrir", token: match[1]}).then(resposta => {
     if (resposta?.erro) document.querySelector("h1").textContent = resposta.erro;
     else if (resposta?.mensagem) {
-      document.querySelector("h1").textContent = "Conectado ao NOC";
+      document.querySelector("h1").textContent = "Conectado ao NOCFlow";
       document.querySelector("p").textContent = resposta.mensagem;
       for (const p of Array.from(document.querySelectorAll("p")).slice(1)) p.remove();
     }
   }).catch(() => {
-    document.querySelector("h1").textContent = "Recarregue a extensão NOC e tente novamente pelo aplicativo.";
+    document.querySelector("h1").textContent = "Recarregue a extensão NOCFlow e tente novamente pelo aplicativo.";
   });
 })();

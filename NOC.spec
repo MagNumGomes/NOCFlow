@@ -4,10 +4,10 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules, copy_metadata
 
 raiz = Path(SPECPATH)
-dados = collect_data_files("playwright", excludes=["driver/package/.local-browsers/**"])
-dados += copy_metadata("google-generativeai", recursive=True)
+dados = copy_metadata("google-generativeai", recursive=True)
 dados += copy_metadata("groq", recursive=True)
 dados += copy_metadata("winrt-runtime")
+dados += collect_data_files("tzdata")
 dados += [(str(raiz / ".env.example"), ".")]
 dados += [(str(raiz / "edge_extension"), "edge_extension")]
 
@@ -20,19 +20,16 @@ analise = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=["playwright"],
     noarchive=False,
 )
-# O hook do Playwright também coleta dados: exclui navegadores antigos do venv.
-analise.datas = [item for item in analise.datas if ".local-browsers" not in item[0].replace("\\", "/").split("/")]
-analise.binaries = [item for item in analise.binaries if ".local-browsers" not in item[0].replace("\\", "/").split("/")]
 pyz = PYZ(analise.pure)
 exe = EXE(
     pyz,
     analise.scripts,
     [],
     exclude_binaries=True,
-    name="OrquestradorNOC",
+    name="NOCFlow",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -46,5 +43,5 @@ coleta = COLLECT(
     analise.datas,
     strip=False,
     upx=False,
-    name="OrquestradorNOC",
+    name="NOCFlow",
 )

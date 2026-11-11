@@ -4,7 +4,7 @@ import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from edge_bridge import EdgeBridge
+from noc.edge_bridge import EdgeBridge
 
 
 class EdgeBridgeTests(unittest.TestCase):
@@ -71,3 +71,20 @@ class EdgeBridgeTests(unittest.TestCase):
         with urlopen(self.requisicao("result", headers, json.dumps({"tipo": "ticket", "ticket": "123", "url": link}).encode()), timeout=3):
             pass
         self.assertEqual(self.pedido.eventos.get(timeout=1), ("ticket", {"ticket": "123", "url": link}))
+
+    def test_relatorio_por_campo_e_sinal_de_conexao_sao_validados(self):
+        headers = {"Content-Type": "application/json", "X-NOC-Token": self.pedido.token}
+        for campos in ({"categoria": "desconhecido"}, {"qualquer": "preenchido"}, []):
+            with self.subTest(campos=campos), self.assertRaises(HTTPError):
+                urlopen(self.requisicao("result", headers, json.dumps({"tipo": "ok", "campos": campos}).encode()), timeout=3)
+        campos = {"assunto": "preenchido", "categoria": "pendente", "urgencia": "nao_localizado"}
+        with urlopen(self.requisicao("result", headers, json.dumps({"tipo": "ok", "campos": campos}).encode()), timeout=3):
+            pass
+        self.assertEqual(self.pedido.eventos.get(timeout=1)[1]["campos"], campos)
+        with self.assertRaises(HTTPError):
+            urlopen(self.requisicao("result", headers, b'{"tipo":"sinal"}'), timeout=3)
+        self.pedido.dados = {"tipo": "conectar"}
+        self.pedido.ultimo_sinal = 0
+        with urlopen(self.requisicao("result", headers, b'{"tipo":"sinal"}'), timeout=3):
+            pass
+        self.assertGreater(self.pedido.ultimo_sinal, 0)

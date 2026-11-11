@@ -9,6 +9,13 @@ venv.bak/
 
 # Byte-compiled / arquivos de cache do Python
 __pycache__/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 *.py[cod]
 *$py.class
 *.so
@@ -34,6 +41,9 @@ dist/
 
 # Logs e arquivos temporários
 .noc_data/
+config/private/
+knowledge/private/
+*.bak
 *.log
 *.tmp
 *.temp

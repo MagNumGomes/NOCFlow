@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "NOC — Zabbix e Movidesk sem IA",
-  "version": "2.0.0",
-  "description": "Importa eventos do Zabbix e preenche/retorna tickets do Movidesk na sessão já logada.",
-  "permissions": ["scripting", "storage"],
-  "host_permissions": ["http://127.0.0.1/*", "https://*.movidesk.com/*", "https://monitoramento.noc.dataside.com.br/*", "https://crz.extras.tools.dataside.com.br/*"],
+  "name": "NOCFlow — Zabbix e Movidesk",
+  "version": "2.1.0",
+  "description": "Importa eventos do Zabbix e preenche/retorna tickets do Movidesk na sessão já logada com o NOCFlow.",
+  "permissions": ["scripting", "storage", "alarms"],
+  "host_permissions": ["http://127.0.0.1/*", "https://*.movidesk.com/*", "https://zabbix.example.com/*", "https://zabbix-secondary.example.com/*"],
   "background": {"service_worker": "background.js", "type": "module"},
   "content_scripts": [
     {"matches": ["http://127.0.0.1/*"], "js": ["bridge.js"], "run_at": "document_idle"},
     {"matches": ["https://*.movidesk.com/*"], "js": ["ticket.js", "movidesk.js"], "run_at": "document_idle"},
-    {"matches": ["https://monitoramento.noc.dataside.com.br/*", "https://crz.extras.tools.dataside.com.br/*"], "js": ["coletor.js", "zabbix.js"], "run_at": "document_idle"}
+    {"matches": ["https://zabbix.example.com/*", "https://zabbix-secondary.example.com/*"], "js": ["coletor.js", "zabbix.js"], "run_at": "document_idle"}
   ]
 }

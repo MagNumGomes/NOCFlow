@@ -87,7 +87,7 @@
           const doc = new DOMParser().parseFromString(await resposta.text(), "text/html");
           const detalhe = extrair(doc, evento.link_zabbix);
           for (const campo of campos) if (!evento[campo]) evento[campo] = detalhe[campo];
-        } catch { evento.aviso = "Detalhe indisponível; revise os campos vazios no NOC."; }
+        } catch { evento.aviso = "Detalhe indisponível; revise os campos vazios no NOCFlow."; }
       }
     }
     await Promise.all([trabalhar(), trabalhar()]);
@@ -122,5 +122,5 @@
     }
     return "";
   }
-  globalThis.NocZabbix = {campos, extrair, selecionados, completar, selecionar, linhasRotuladas, numeroChamado};
+  globalThis.NOCFlowZabbix = globalThis.NocZabbix = {campos, extrair, selecionados, completar, selecionar, linhasRotuladas, numeroChamado};
 })();

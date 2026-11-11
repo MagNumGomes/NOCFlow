@@ -7,10 +7,11 @@ import unittest
 
 from PIL import Image
 
-from extracao_local import interpretar_ocr, texto_relevante
-from incidentes import FilaIncidentes, importar_eventos
-from noc_services import Config, RascunhoWorker
-from ocr_windows import organizar_palavras
+from noc.extracao_local import interpretar_ocr, texto_relevante
+from noc.incidentes import FilaIncidentes, importar_eventos
+from noc.configuracao import Config
+from noc.rascunhos import RascunhoWorker
+from noc.ocr_windows import organizar_palavras
 
 
 def evento(eventid="10", dominio="https://zabbix.test", **campos):
@@ -38,6 +39,7 @@ class ImportacaoTests(unittest.TestCase):
     def test_formato_valores_e_identidade_sao_validados_antes_de_importar(self):
         invalidos = [[], {"versao": 2, "origem": "zabbix"}, evento(eventid="99", link_zabbix="https://zabbix.test/tr_events.php?eventid=10"),
                      evento(alerta=[]), evento(link_zabbix="javascript:alert(1)"), evento(link_zabbix="https://user:senha@zabbix.test/tr_events.php?eventid=10"),
+                     evento(link_zabbix="https://zabbix.test:porta/tr_events.php?eventid=10"), evento(imagem_base64=0),
                      {"versao": 1, "origem": "zabbix", "eventos": [evento()] * 101}]
         for valor in invalidos:
             with self.subTest(valor=valor), self.assertRaises(ValueError):
@@ -74,6 +76,49 @@ class ImportacaoTests(unittest.TestCase):
             worker = RascunhoWorker(config, queue.Queue())
             self.assertEqual(worker.carregar()[0]["ticket"], "123")
             self.assertIsNone(worker.fila_carregada)
+
+    def test_fila_restaurada_com_campos_parciais_e_snapshots_independentes(self):
+        estado = {"ativo": "a", "itens": [{"id": "a", "dados": {"alerta": "CPU"},
+                                        "meta": {"metricas": {"chamadas": 0}, "campos_revisados": ["alerta"]}}]}
+        fila = FilaIncidentes()
+        fila.restaurar(estado)
+        self.assertEqual(fila.obter()["dados"]["ticket"], "")
+        self.assertIsNone(fila.obter()["imagem"])
+        snapshot = fila.snapshot()
+        fila.obter()["meta"]["metricas"]["chamadas"] = 2
+        fila.obter()["meta"]["campos_revisados"].append("servidor")
+        for original in (estado, snapshot):
+            self.assertEqual(original["itens"][0]["meta"]["metricas"]["chamadas"], 0)
+            self.assertEqual(original["itens"][0]["meta"]["campos_revisados"], ["alerta"])
+
+    def test_fila_corrompida_nao_e_ignorada_como_rascunho_antigo(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            config = Config(Path(pasta))
+            config.dados_dir.mkdir()
+            arquivo = config.dados_dir / "rascunho.json"
+            for fila in ({}, [], None):
+                with self.subTest(fila=fila):
+                    arquivo.write_text(json.dumps({"versao": 2, "dados": {}, "fila": fila}), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "Fila de incidentes inválida"):
+                        RascunhoWorker(config, queue.Queue()).carregar()
+
+    def test_recaptura_preserva_revisao_e_permite_resolver_diferencas(self):
+        fila = FilaIncidentes()
+        identificador = fila.importar(importar_eventos(evento()))[0]
+        item = fila.obter(identificador)
+        item["dados"]["situacao"] = "Equipe acionada; CPU caiu para 40%."
+        item["meta"]["campos_revisados"] = ["situacao"]
+        fila.importar(importar_eventos(evento(situacao="CPU 99%", aviso="Detalhe indisponível")))
+        self.assertEqual(item["dados"]["situacao"], "Equipe acionada; CPU caiu para 40%.")
+        self.assertEqual(item["meta"]["atualizacoes"], {"situacao": "CPU 99%"})
+        self.assertEqual(item["meta"]["avisos_coleta"], ["Detalhe indisponível"])
+        fila.resolver_atualizacao(identificador, "situacao", False)
+        self.assertEqual(item["dados"]["situacao"], "Equipe acionada; CPU caiu para 40%.")
+        fila.importar(importar_eventos(evento(situacao="CPU 80%")))
+        fila.resolver_atualizacao(identificador, "situacao", True)
+        self.assertEqual(item["dados"]["situacao"], "CPU 80%")
+        self.assertNotIn("situacao", item["meta"]["campos_revisados"])
+        self.assertEqual(item["meta"]["avisos_coleta"], [])
 
 
 class ParserOCRTests(unittest.TestCase):
@@ -122,14 +167,18 @@ class ColetorDOMTests(unittest.TestCase):
                 page.goto("https://zabbix.test/tr_events.php?eventid=10")
                 page.evaluate("""() => {
                   window.copias = [];
-                  Object.defineProperty(navigator, 'clipboard', {value: {write: async items => {window.copias.push(await items[0].getType('image/png'));}, writeText: async texto => {window.textoCopiado = texto;}}});
+                  Object.defineProperty(navigator, 'clipboard', {value: {
+                    write: async items => {window.copias.push(items[0]);},
+                    writeText: async texto => {window.textoCopiado = texto;}
+                  }});
                 }""")
                 for nome in ("coletor.js", "zabbix.js"):
                     page.add_script_tag(content=(raiz / "edge_extension" / nome).read_text(encoding="utf-8"))
-                page.locator("#noc-zabbix summary").click()
-                page.get_by_role("button", name="Copiar dados para NOC", exact=True).click()
+                page.locator("#noc-zabbix > summary").click()
+                page.get_by_role("button", name="Copiar dados para NOCFlow", exact=True).click()
                 page.wait_for_function("Boolean(window.textoCopiado)")
                 self.assertFalse(carregamentos)
+                page.get_by_text("Mais opções", exact=True).click()
                 botao = page.get_by_role("button", name="Copiar imagem Host / Trigger / Severity", exact=True)
                 botao.click()
                 page.wait_for_function("window.copias.length === 1")
@@ -142,7 +191,41 @@ class ColetorDOMTests(unittest.TestCase):
                 botao.click()
                 page.wait_for_function("window.copias.length === 3")
                 self.assertEqual(page.evaluate("window.renderizacoes"), 1)
-                self.assertGreater(page.evaluate("window.copias[0].size"), 100)
+                self.assertGreater(page.evaluate("async () => (await window.copias[0].getType('image/png')).size"), 100)
+                page.get_by_role("button", name="Copiar link + imagem", exact=True).click()
+                page.wait_for_function("window.copias.length === 4")
+                link_imagem = page.evaluate("""async () => {
+                  const item = window.copias[3];
+                  const html = await (await item.getType('text/html')).text();
+                  const conteudo = new DOMParser().parseFromString(html, 'text/html');
+                  const imagem = conteudo.querySelector('img');
+                  const decodificada = new Image();
+                  decodificada.src = imagem.src;
+                  await decodificada.decode();
+                  return {
+                    texto: await (await item.getType('text/plain')).text(),
+                    link: conteudo.querySelector('a').href,
+                    textoLink: conteudo.querySelector('a').textContent,
+                    imagem: imagem.src,
+                    largura: decodificada.naturalWidth,
+                    altura: decodificada.naturalHeight
+                  };
+                }""")
+                self.assertEqual(link_imagem["texto"], page.url)
+                self.assertEqual(link_imagem["link"], page.url)
+                self.assertEqual(link_imagem["textoLink"], page.url)
+                self.assertTrue(link_imagem["imagem"].startswith("data:image/png;base64,"))
+                self.assertGreater(link_imagem["largura"], 100)
+                self.assertGreater(link_imagem["altura"], 30)
+                self.assertEqual(page.evaluate("window.renderizacoes"), 1)
+                page.get_by_role("button", name="Copiar e-mail + imagem", exact=True).click()
+                page.wait_for_function("window.copias.length === 5")
+                email = page.evaluate("""async () => ({
+                  texto: await (await window.copias[4].getType('text/plain')).text(),
+                  html: await (await window.copias[4].getType('text/html')).text()
+                })""")
+                self.assertIn("Servidor: host-02", email["texto"])
+                self.assertIn(link_imagem["imagem"], email["html"])
             finally:
                 browser.close()
 

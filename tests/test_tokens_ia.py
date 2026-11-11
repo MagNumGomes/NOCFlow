@@ -7,8 +7,9 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from noc_services import Config, carregar_config, consultar_gemini
-from tokens_ia import ConsumoIA
+from noc.configuracao import Config, carregar_config
+from noc.extracao import consultar_gemini
+from noc.tokens_ia import ConsumoIA
 
 
 class TokensTests(unittest.TestCase):
@@ -38,7 +39,7 @@ class TokensTests(unittest.TestCase):
                 self.assertEqual(eventos[0]["saida"], 30)
 
     def test_ausencia_de_uso_nao_e_exibida_como_consumo_zero(self):
-        from noc_services import notificar_consumo
+        from noc.extracao import notificar_consumo
 
         consumo = ConsumoIA()
         notificar_consumo(lambda t, d: consumo.registrar(d), "Groq", SimpleNamespace(prompt_tokens=10, completion_tokens=20, total_tokens=30))

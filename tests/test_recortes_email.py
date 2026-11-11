@@ -4,8 +4,8 @@ import unittest
 
 from PIL import Image
 
-from noc_services import gerar_assunto_email
-from recortes_email import EditorRecortes, caixa_original, montar_recortes
+from noc.comunicados import gerar_assunto_email
+from noc.recortes_email import EditorRecortes, caixa_original, montar_recortes
 
 
 class RecortesTests(unittest.TestCase):
@@ -34,7 +34,7 @@ class RecortesTests(unittest.TestCase):
         self.assertEqual(resultado.getpixel((2, 2)), (1, 2, 3))
         self.assertEqual(resultado.getpixel((0, 16)), (0, 128, 0))
         self.assertEqual(resultado.getpixel((0, 32)), (255, 165, 0))
-        self.assertNotIn((255, 0, 255), set(resultado.getdata()))
+        self.assertNotIn((255, 0, 255), {cor for _, cor in resultado.getcolors(resultado.width * resultado.height)})
         self.assertEqual(imagem.tobytes(), original)
         with self.assertRaisesRegex(ValueError, "Severity"):
             montar_recortes(imagem, {"Host": caixas["Host"], "Trigger": caixas["Trigger"]})

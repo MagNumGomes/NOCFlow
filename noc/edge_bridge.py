@@ -9,12 +9,12 @@ import queue
 import secrets
 import shutil
 import subprocess
-import sys
 import threading
 import time
 from urllib.parse import urlsplit, parse_qs
 
-from incidentes import importar_eventos, MAX_IMPORTACAO
+from .configuracao import diretorio_recursos
+from .incidentes import importar_eventos, MAX_IMPORTACAO
 
 PORTA_EDGE = 18764
 ARQUIVOS_EXTENSAO = ("manifest.json", "background.js", "bridge.js", "ticket.js", "preencher.js", "movidesk.js", "zabbix.js", "coletor.js", "vendor/html2canvas.min.js", "vendor/LICENSE.html2canvas")
@@ -41,7 +41,7 @@ def abrir_no_edge(url):
 
 
 def preparar_extensao(diretorio):
-    origem = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "edge_extension"
+    origem = diretorio_recursos() / "edge_extension"
     destino = diretorio / "edge_extension"
     destino.mkdir(parents=True, exist_ok=True)
     if origem.resolve() != destino.resolve():
@@ -61,6 +61,7 @@ class Pedido:
     expira: float
     eventos: queue.Queue = field(default_factory=queue.Queue)
     conectado: threading.Event = field(default_factory=threading.Event)
+    ultimo_sinal: float = field(default_factory=time.monotonic)
 
 
 class EdgeBridge:
@@ -114,16 +115,16 @@ class EdgeBridge:
             def do_GET(self):
                 if self.path.startswith("/request/"):
                     if not self.pedido("/request/"):
-                        self.responder(404, "Pedido expirado. Volte ao NOC e tente novamente.", "text/plain; charset=utf-8")
+                        self.responder(404, "Pedido expirado. Volte ao NOCFlow e tente novamente.", "text/plain; charset=utf-8")
                         return
                     self.responder(200, """<!doctype html><html lang="pt-BR"><meta charset="utf-8">
-<title>Conectando NOC ao Edge</title>
+<title>Conectando NOCFlow ao Edge</title>
 <style>body{font:18px Segoe UI,sans-serif;max-width:760px;margin:60px auto;padding:20px;line-height:1.6}h1{color:#175cd3}</style>
-<h1>Conectando NOC ao Edge…</h1>
-<p>A extensão NOC usará esta guia para abrir e preencher seu ticket.</p>
-<p>Se esta tela permanecer aberta, volte ao aplicativo e clique em <b>Configurar extensão do Edge</b>.
+<h1>Conectando NOCFlow ao Edge…</h1>
+<p>A extensão NOCFlow está conectando esta operação à sua sessão do Edge.</p>
+<p>Se esta tela permanecer aberta, volte ao aplicativo e clique em <b>Instalar extensão do Edge</b>.
 Instale a extensão no mesmo perfil do Edge em que você usa o Movidesk e tente novamente.</p>
-<p>Após instalar ou recarregar a extensão, clique novamente em <b>Abrir Movidesk</b> no aplicativo.</p>
+<p>Após instalar ou recarregar a extensão, retome a operação pelo aplicativo.</p>
 </html>""", "text/html; charset=utf-8")
                     return
                 pedido = self.pedido("/api/request/")
@@ -147,6 +148,8 @@ Instale a extensão no mesmo perfil do Edge em que você usa o Movidesk e tente 
                     tipo = evento.get("tipo")
                     if tipo == "importar" and pedido.dados.get("tipo") == "conectar":
                         mensagem = importar_eventos(evento.get("payload"))
+                    elif tipo == "sinal" and pedido.dados.get("tipo") == "conectar":
+                        mensagem = ""
                     elif tipo == "ticket" and pedido.dados.get("url"):
                         ticket, link = evento.get("ticket", ""), evento.get("url", "")
                         if not isinstance(ticket, str) or not ticket.isascii() or not ticket.isdigit() or len(ticket) > 30 or not isinstance(link, str):
@@ -161,9 +164,18 @@ Instale a extensão no mesmo perfil do Edge em que você usa o Movidesk e tente 
                         mensagem = {"ticket": ticket, "url": link}
                     elif tipo in ("progresso", "ok", "erro") and isinstance(evento.get("mensagem", ""), str):
                         mensagem = evento.get("mensagem", "")[:1200]
+                        if tipo == "ok" and "campos" in evento:
+                            campos = evento["campos"]
+                            permitidos = {"assunto", "descricao", "tipo", "categoria", "urgencia"}
+                            if not isinstance(campos, dict) or set(campos) - permitidos or any(
+                                v not in ("preenchido", "pendente", "nao_localizado") for v in campos.values()
+                            ):
+                                raise ValueError()
+                            mensagem = {"mensagem": mensagem, "campos": campos}
                     else:
                         raise ValueError()
                     pedido.conectado.set()
+                    pedido.ultimo_sinal = time.monotonic()
                     pedido.eventos.put((tipo, mensagem))
                     self.responder(200, '{"ok":true}')
                 except (ValueError, TypeError, AttributeError):
@@ -172,7 +184,7 @@ Instale a extensão no mesmo perfil do Edge em que você usa o Movidesk e tente 
         try:
             self.servidor = ThreadingHTTPServer(("127.0.0.1", self.porta), Handler)
         except OSError as exc:
-            raise OSError(f"A porta local {self.porta} está em uso. Feche outra instância do NOC e tente novamente.") from exc
+            raise OSError(f"A porta local {self.porta} está em uso. Feche outra instância do NOCFlow e tente novamente.") from exc
         self.servidor.daemon_threads = True
         self.porta = self.servidor.server_port
         self.thread = threading.Thread(target=self.servidor.serve_forever, name="noc-edge-http", daemon=True)

@@ -7,17 +7,17 @@ RAIZ = Path(__file__).resolve().parent
 
 def artefatos():
     for nome, descricao, matches, arquivos in (
-        ("Zabbix", "Coleta local de eventos, seleção em lote e imagens sob demanda", ["https://monitoramento.noc.dataside.com.br/*", "https://crz.extras.tools.dataside.com.br/*"], ["coletor.js", "zabbix.js"]),
+        ("Zabbix", "Coleta local de eventos, seleção em lote e imagens sob demanda", ["https://zabbix.example.com/*", "https://zabbix-secondary.example.com/*"], ["coletor.js", "zabbix.js"]),
         ("Movidesk", "Copia número, assunto, link e template sem polling periódico", ["https://*.movidesk.com/*"], ["movidesk.js"]),
     ):
         cabecalho = "\n".join([
-            "// ==UserScript==", f"// @name         NOC - {nome} - Local", "// @namespace    automacao-noc",
-            "// @version      2.0.0", f"// @description  {descricao}",
+            "// ==UserScript==", f"// @name         NOCFlow - {nome} - Local", "// @namespace    nocflow",
+            "// @version      2.1.0", f"// @description  {descricao}",
             *(f"// @match        {match}" for match in matches),
             "// @grant        none", "// @run-at       document-idle", "// ==/UserScript==", "",
             "// Gerado por gerar_userscripts.py; edite as fontes em edge_extension/.", "",
         ])
-        yield f"NOC-{nome}.user.js", cabecalho + "\n".join((RAIZ / "edge_extension" / a).read_text(encoding="utf-8") for a in arquivos)
+        yield f"NOCFlow-{nome}.user.js", cabecalho + "\n".join((RAIZ / "edge_extension" / a).read_text(encoding="utf-8") for a in arquivos)
 
 
 if __name__ == "__main__":
