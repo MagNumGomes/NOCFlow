@@ -373,6 +373,19 @@ class CentralInterfaceTests(unittest.TestCase):
         self.app.perfis_operacionais = validar_perfis(d)
         self.assertFalse(self.app.validar("Teams"))
 
+    def test_recorrencia_e_pdf_pela_central(self):
+        from pypdf import PdfReader
+        self.app.vars["alerta"].set("Falha de VPN")
+        self.app.vars["ticket"].set("456")
+        self.central.executar(self.central.gerar_recorrencia)
+        texto = self.central.relatorio.get("1.0", "end-1c")
+        self.assertIn("Tickets distintos: 1", texto)
+        self.assertIn("Falha de VPN", texto)
+        destino = Path(self.pasta.name) / "auditoria.pdf"
+        with patch("noc.central_operacional.filedialog.asksaveasfilename", return_value=str(destino)):
+            self.central.exportar_relatorio_pdf()
+        self.assertIn("Falha de VPN", PdfReader(destino).pages[0].extract_text())
+
 
 if __name__ == "__main__":
     unittest.main()

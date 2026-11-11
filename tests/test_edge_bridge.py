@@ -77,7 +77,8 @@ class EdgeBridgeTests(unittest.TestCase):
         for campos in ({"categoria": "desconhecido"}, {"qualquer": "preenchido"}, []):
             with self.subTest(campos=campos), self.assertRaises(HTTPError):
                 urlopen(self.requisicao("result", headers, json.dumps({"tipo": "ok", "campos": campos}).encode()), timeout=3)
-        campos = {"assunto": "preenchido", "categoria": "pendente", "urgencia": "nao_localizado"}
+        campos = {"assunto": "preenchido", "categoria": "pendente", "urgencia": "nao_localizado",
+                  "tempo_apontado": "preenchido", "atividade": "pendente"}
         with urlopen(self.requisicao("result", headers, json.dumps({"tipo": "ok", "campos": campos}).encode()), timeout=3):
             pass
         self.assertEqual(self.pedido.eventos.get(timeout=1)[1]["campos"], campos)

@@ -13,7 +13,8 @@ MODELOS = (*MODELOS_ABERTURA, "Acionamento inicial", "Acionamento", "Atualizaç�
 ROTULOS_CAMPOS = {"alerta": "Alerta", "servidor": "Servidor", "severidade": "Severidade",
                   "situacao": "Dados operacionais", "horario": "Horário", "link_zabbix": "Link Zabbix",
                   "assunto": "Título", "descricao": "Descrição", "tipo": "Tipo/ação interna",
-                  "categoria": "Categoria", "urgencia": "Urgência"}
+                  "categoria": "Categoria", "urgencia": "Urgência", "tempo_apontado": "Tempo apontado (00:03)",
+                  "atividade": "Atividade (Observability)"}
 STATUS_PREENCHIMENTO = {"preenchido": "preenchido", "pendente": "pendente",
                        "nao_localizado": "não localizado"}
 

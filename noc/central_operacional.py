@@ -21,6 +21,8 @@ from .historico_atendimento import (TIPOS_EVENTO, agendar_acao, concluir_acompan
                                     registrar_evento)
 from .regras_operacionais import aplicar_regra, carregar_perfis, prazos_atendimento
 from .relatorios import diario_bordo, exportar_csv, indicadores, passagem_turno
+from .recorrencia import analisar_recorrencia, formatar_recorrencia
+from .exportacao_pdf import exportar_pdf
 
 ORIGENS = ("Zabbix", "Grafana", "Teams", "WhatsApp", "E-mail", "Telefone", "Manual", "Dynatrace", "Jira")
 NATUREZAS = ("Incidente", "Solicitação", "Encaminhamento", "Mudança", "Rotina")
@@ -588,11 +590,40 @@ class CentralOperacional:
         for texto, funcao in (("Diário", self.gerar_diario), ("Passagem", self.gerar_passagem), ("Indicadores", self.gerar_indicadores),
                               ("Exportar CSV", self.exportar), ("Resumo com IA", self.ia_resumo), ("Registrar recebimento", self.receber_turno)):
             ttk.Button(botoes, text=texto, command=lambda f=funcao: self.executar(f)).pack(side="left", padx=2)
+        filtros = ttk.Frame(self.relatorios)
+        filtros.pack(fill="x", pady=4)
+        self.recorrencia_periodo = tk.BooleanVar(self.janela, False)
+        self.recorrencia_arquivados = tk.BooleanVar(self.janela, False)
+        self.recorrencia_ativo = tk.BooleanVar(self.janela, False)
+        ttk.Button(filtros, text="Recorrência de tickets", command=lambda: self.executar(self.gerar_recorrencia)).pack(side="left")
+        for rotulo, var in (("Usar período acima", self.recorrencia_periodo),
+                            ("Incluir arquivados", self.recorrencia_arquivados), ("Separar por ativo", self.recorrencia_ativo)):
+            ttk.Checkbutton(filtros, text=rotulo, variable=var).pack(side="left", padx=4)
+        ttk.Label(self.relatorios, text="Recorrência: tickets distintos por perfil, serviço e resumo. Gere novamente após mudar os filtros.",
+                  wraplength=850).pack(anchor="w")
         self.relatorio = texto_area(self.relatorios)
+        ttk.Button(self.relatorios, text="Exportar PDF do texto exibido", command=lambda: self.executar(self.exportar_relatorio_pdf)).pack(anchor="e", pady=3)
         ttk.Button(self.relatorios, text="Copiar texto exibido", command=lambda: self.executar(lambda: pyperclip.copy(self.relatorio.get("1.0", "end-1c")))).pack(anchor="e")
 
     def gerar_diario(self):
         mostrar_texto(self.relatorio, diario_bordo(self.app.fila.itens, self.inicio.get(), self.fim.get()))
+
+    def gerar_recorrencia(self):
+        relatorio = analisar_recorrencia(self.app.fila.itens,
+            self.inicio.get() if self.recorrencia_periodo.get() else None,
+            self.fim.get() if self.recorrencia_periodo.get() else None,
+            incluir_arquivados=self.recorrencia_arquivados.get(), por_ativo=self.recorrencia_ativo.get())
+        mostrar_texto(self.relatorio, formatar_recorrencia(relatorio))
+
+    def exportar_relatorio_pdf(self):
+        texto = self.relatorio.get("1.0", "end-1c").strip()
+        if not texto:
+            raise ValueError("Gere um relatório antes de exportar.")
+        destino = filedialog.asksaveasfilename(parent=self.janela, title="Exportar relatório em PDF",
+            defaultextension=".pdf", initialfile="relatorio-noc.pdf", filetypes=[("PDF", "*.pdf")])
+        if destino:
+            exportar_pdf(destino, texto)
+            self.aviso.set("PDF exportado com o relatório exibido.")
 
     def gerar_passagem(self):
         mostrar_texto(self.relatorio, passagem_turno(self.app.fila.itens, self.app.fila.operacional))
@@ -610,7 +641,7 @@ class CentralOperacional:
     def ia_resumo(self):
         texto = self.relatorio.get("1.0", "end-1c").strip()
         if not texto:
-            raise ValueError("Gere o diário, a passagem ou os indicadores primeiro.")
+            raise ValueError("Gere um relatório primeiro, como a recorrência de tickets.")
         fontes = [{"id": "relatorio-local", "texto": texto}]
         config = self.app.config
         self.iniciar_ia(lambda: responder_com_fontes(config, "Resuma ações, pendências e próximos passos. Preserve os valores já calculados e cite as fontes.", fontes), self.mostrar_resposta_ia, "resumir_registros")

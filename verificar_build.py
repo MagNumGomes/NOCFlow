@@ -92,6 +92,18 @@ def verificar(relatorio):
                 app.fila.operacional["rotinas"] = [criar_rotina("Rotina fictícia", "2030-01-01T10:00:00+00:00")]
                 app.abrir_central()
                 app.central.gerar_passagem()
+                from noc.exportacao_pdf import exportar_pdf
+                app.vars["ticket"].set("123")
+                app.guardar_incidente()
+                app.central.gerar_recorrencia()
+                texto = app.central.relatorio.get("1.0", "end-1c")
+                if "Tickets distintos: 1" not in texto:
+                    raise RuntimeError("Relatório de recorrência não contabilizou o ticket.")
+                pdf = Path(pasta) / "recorrencia.pdf"
+                exportar_pdf(pdf, texto)
+                if not pdf.read_bytes().startswith(b"%PDF-"):
+                    raise RuntimeError("Exportação PDF inválida no executável.")
+                resultado["recorrencia_pdf"] = "ok"
                 if not app.central.lista_agenda.get_children():
                     raise RuntimeError("A agenda não carregou a rotina no executável.")
                 app.revisao += 1

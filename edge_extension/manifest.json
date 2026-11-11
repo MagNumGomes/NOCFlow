@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "NOCFlow — Zabbix e Movidesk",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Importa eventos do Zabbix e preenche/retorna tickets do Movidesk na sessão já logada com o NOCFlow.",
-  "permissions": ["scripting", "storage", "alarms"],
+  "permissions": ["scripting", "storage", "alarms", "activeTab"],
+  "action": {"default_popup": "popup.html", "default_title": "NOCFlow — assinatura WhatsApp"},
   "host_permissions": ["http://127.0.0.1/*", "https://*.movidesk.com/*", "https://zabbix.example.com/*", "https://zabbix-secondary.example.com/*"],
   "background": {"service_worker": "background.js", "type": "module"},
   "content_scripts": [

@@ -123,7 +123,7 @@ async function preencher(sender) {
     const campos = respostas[0].result.campos || {};
     await informar(pedido.token, "ok", "", {campos});
     await chrome.storage.session.set({[chave(id)]: {...pedido, fase: "salvar", expira: Date.now() + pedido.retorno * 1000}});
-    const nomes = {assunto: "título", descricao: "descrição", tipo: "tipo/ação interna", categoria: "categoria", urgencia: "urgência"};
+    const nomes = {assunto: "título", descricao: "descrição", tipo: "tipo/ação interna", categoria: "categoria", urgencia: "urgência", tempo_apontado: "tempo apontado (00:03)", atividade: "atividade (Observability)"};
     const pendentes = Object.entries(campos).filter(([, estado]) => estado !== "preenchido").map(([campo]) => nomes[campo]);
     const detalhe = pendentes.length ? ` Confira os campos pendentes: ${pendentes.join(", ")}.` : " Campos confirmados.";
     return {aguardando_ticket: true, mensagem: `NOCFlow: título e descrição preenchidos.${detalhe} Revise e salve; o número será devolvido ao aplicativo.`};

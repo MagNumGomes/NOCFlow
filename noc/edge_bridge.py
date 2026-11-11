@@ -17,7 +17,7 @@ from .configuracao import diretorio_recursos
 from .incidentes import importar_eventos, MAX_IMPORTACAO
 
 PORTA_EDGE = 18764
-ARQUIVOS_EXTENSAO = ("manifest.json", "background.js", "bridge.js", "ticket.js", "preencher.js", "movidesk.js", "zabbix.js", "coletor.js", "vendor/html2canvas.min.js", "vendor/LICENSE.html2canvas")
+ARQUIVOS_EXTENSAO = ("manifest.json", "background.js", "bridge.js", "ticket.js", "preencher.js", "movidesk.js", "zabbix.js", "coletor.js", "popup.html", "popup.css", "popup.js", "whatsapp.js", "vendor/html2canvas.min.js", "vendor/LICENSE.html2canvas")
 
 
 def caminho_edge():
@@ -166,7 +166,7 @@ Instale a extensão no mesmo perfil do Edge em que você usa o Movidesk e tente 
                         mensagem = evento.get("mensagem", "")[:1200]
                         if tipo == "ok" and "campos" in evento:
                             campos = evento["campos"]
-                            permitidos = {"assunto", "descricao", "tipo", "categoria", "urgencia"}
+                            permitidos = {"assunto", "descricao", "tipo", "categoria", "urgencia", "tempo_apontado", "atividade"}
                             if not isinstance(campos, dict) or set(campos) - permitidos or any(
                                 v not in ("preenchido", "pendente", "nao_localizado") for v in campos.values()
                             ):

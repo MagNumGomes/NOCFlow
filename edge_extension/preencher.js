@@ -28,7 +28,7 @@ export async function preencherFormulario(dados) {
     if (assunto.value.trim() && assunto.value !== dados.assunto) {
       throw new Error("O assunto já foi editado nesta guia. Revise o ticket antes de tentar novamente.");
     }
-    const campos = {assunto: "pendente", descricao: "pendente", tipo: "nao_localizado", categoria: "nao_localizado", urgencia: "nao_localizado"};
+    const campos = {assunto: "pendente", descricao: "pendente", tipo: "nao_localizado", categoria: "nao_localizado", urgencia: "nao_localizado", tempo_apontado: "nao_localizado", atividade: "nao_localizado"};
 
   // 1. Assunto
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -39,34 +39,34 @@ export async function preencherFormulario(dados) {
 
   // 2. Tipo do ticket: selecionar "INTERNO"
   try {
-    const radioInterno = escopo.querySelector('input.ticketTypeOption[value="1"]') || document.querySelector('input.ticketTypeOption[value="1"]');
-    const labelInterno = escopo.querySelector('label.TicketTypeLabel.internal, label.ticket-type-label.internal') || document.querySelector('label.TicketTypeLabel.internal, label.ticket-type-label.internal');
-    if (radioInterno && !radioInterno.checked) {
-      if (labelInterno) labelInterno.click();
-      else {
-        radioInterno.checked = true;
-        radioInterno.dispatchEvent(new Event("change", {bubbles: true}));
-      }
-    }
-    const radioAcaoInterna = escopo.querySelector('input.actionTypeOption[value="1"]') || document.querySelector('input.actionTypeOption[value="1"]');
-    const labelAcaoInterna = escopo.querySelector('label.TicketActionTypeLabel.internal, label.labelInternal') || document.querySelector('label.TicketActionTypeLabel.internal, label.labelInternal');
-    if (radioAcaoInterna && !radioAcaoInterna.checked) {
-      if (labelAcaoInterna) labelAcaoInterna.click();
-      else {
-        radioAcaoInterna.checked = true;
-        radioAcaoInterna.dispatchEvent(new Event("change", {bubbles: true}));
-      }
-    }
+     // Valores numéricos variam por layout: determine a opção pelo rótulo associado.
+     function interno(seletor, seletorLabel) {
+       const radios = Array.from(escopo.querySelectorAll(seletor));
+       const label = escopo.querySelector(seletorLabel);
+       const alvoLabel = label?.control || label?.querySelector('input[type="radio"]');
+       const radio = radios.find(el => el === alvoLabel ||
+         Array.from(el.labels || []).some(l => /^intern[oa]$/.test(normalizar(l.textContent))) ||
+         /^intern[oa]$/.test(normalizar(el.getAttribute("aria-label")))) ||
+         (alvoLabel?.type === "radio" ? alvoLabel : null);
+       if (radio) {
+         if (!radio.checked) radio.click();
+         return radio;
+       }
+       if (label) label.click();
+       return null;
+     }
+     const radioInterno = interno('input.ticketTypeOption, input[type="radio"][name="TicketType"]', 'label.TicketTypeLabel.internal, label.ticket-type-label.internal');
+     const radioAcaoInterna = interno('input.actionTypeOption, input[type="radio"][name="ActionType"]', 'label.TicketActionTypeLabel.internal, label.labelInternal');
     const candidatos = Array.from((escopo || document).querySelectorAll("button, a, label, span, li, div[role='tab'], div[role='button']"));
     const btnInterno = candidatos.find(el => {
       const t = normalizar(el.textContent).replace(/^✓\s*/, "");
       return t === "interno" && el.getClientRects().length;
     });
-    if (btnInterno && !btnInterno.classList.contains("active") && !btnInterno.classList.contains("selected") && btnInterno.getAttribute("aria-selected") !== "true") {
+     if (!radioInterno && btnInterno && !btnInterno.classList.contains("active") && !btnInterno.classList.contains("selected") && btnInterno.getAttribute("aria-selected") !== "true") {
       btnInterno.click();
     }
     const radios = [radioInterno, radioAcaoInterna].filter(Boolean);
-    if (radios.length) campos.tipo = radios.every(el => el.checked) ? "preenchido" : "pendente";
+     if (radioInterno) campos.tipo = radios.every(el => el.checked) ? "preenchido" : "pendente";
     else if (btnInterno) campos.tipo = btnInterno.classList.contains("active") || btnInterno.classList.contains("selected") || btnInterno.getAttribute("aria-selected") === "true" ? "preenchido" : "pendente";
   } catch {}
 
@@ -205,6 +205,52 @@ export async function preencherFormulario(dados) {
     if (urgencias.length) campos.urgencia = "pendente";
     if (await selecionarCampo(categorias, padroesCat)) campos.categoria = "preenchido";
     if (await selecionarCampo(urgencias, padroesUrg)) campos.urgencia = "preenchido";
+  } catch {}
+
+  // Apontamento inicial: apenas campos da linha de horas, nunca o tempo contabilizado.
+  function camposHoras() {
+    const tempos = localizarCampos('input[name*="TimeSpent" i], input[id*="TimeSpent" i], input[name*="TempoApontado" i], input[id*="TempoApontado" i]', ["tempo apontado"]);
+    const atividades = localizarCampos('select[name*="Activity" i], input[name*="Activity" i], select[id*="Activity" i], input[id*="Activity" i]', ["atividade"]);
+    for (const tabela of escopo.querySelectorAll("table")) {
+      const cabecalhos = Array.from(tabela.querySelectorAll("thead th, thead td"));
+      cabecalhos.forEach((th, indice) => {
+        const destino = normalizar(th.textContent) === "tempo apontado" ? tempos : normalizar(th.textContent) === "atividade" ? atividades : null;
+        if (!destino) return;
+        const linha = Array.from(tabela.querySelectorAll("tbody tr")).find(tr => tr.getClientRects().length && tr.cells[indice]?.querySelector("input, select"));
+        if (linha) destino.push(...linha.cells[indice].querySelectorAll("input, select"));
+      });
+    }
+    return {tempos: [...new Set(tempos)].filter(el => el.tagName === "INPUT" && el.type !== "hidden" && !el.disabled && !el.readOnly && el.getClientRects().length), atividades: [...new Set(atividades)]};
+  }
+  try {
+    let horas = camposHoras();
+    if (!horas.tempos.length) {
+      const abrirHoras = Array.from(escopo.querySelectorAll("button, a, [role='button']")).find(el =>
+        /^(apontar horas|apontamento de horas|adicionar apontamento|registrar tempo)$/.test(normalizar(el.getAttribute("title") || el.getAttribute("aria-label") || el.textContent)) && el.getClientRects().length);
+      if (abrirHoras) {
+        abrirHoras.click();
+        for (let tentativa = 0; tentativa < 10 && !horas.tempos.length; tentativa++) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          horas = camposHoras();
+        }
+      }
+    }
+    if (horas.tempos.length) {
+      campos.tempo_apontado = "pendente";
+      // Não substitui tempo já informado pelo operador, nem cria linhas duplicadas.
+      const tempo = horas.tempos[0];
+      if (!tempo.value.trim() || /^(00:00|0:00|0)$/.test(tempo.value.trim())) {
+        setter.call(tempo, "00:03");
+        tempo.dispatchEvent(new Event("input", {bubbles: true}));
+        tempo.dispatchEvent(new Event("change", {bubbles: true}));
+        tempo.dispatchEvent(new Event("blur", {bubbles: true}));
+      }
+      if (tempo.value === "00:03") campos.tempo_apontado = "preenchido";
+    }
+    if (horas.atividades.length) {
+      campos.atividade = "pendente";
+      if (await selecionarCampo(horas.atividades, [/^observability$/])) campos.atividade = "preenchido";
+    }
   } catch {}
 
   // 4. Editor de Texto Rico (Froala / TinyMCE / Kendo / iframe)
