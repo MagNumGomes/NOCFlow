@@ -7,13 +7,12 @@ import os
 from pathlib import Path
 import queue
 import secrets
-import shutil
 import subprocess
 import threading
 import time
 from urllib.parse import urlsplit, parse_qs
 
-from .configuracao import diretorio_recursos
+from .configuracao import diretorio_recursos, url_valida
 from .incidentes import importar_eventos, MAX_IMPORTACAO
 
 PORTA_EDGE = 18764
@@ -43,14 +42,45 @@ def abrir_no_edge(url):
 def preparar_extensao(diretorio):
     origem = diretorio_recursos() / "edge_extension"
     destino = diretorio / "edge_extension"
+    if origem.resolve() == destino.resolve():
+        destino = diretorio / ".noc_data" / "edge_extension"
+    configuracao = diretorio / ".noc_data" / "extensao.json"
+    if configuracao.exists():
+        preferencias = json.loads(configuracao.read_text(encoding="utf-8"))
+        dominios = preferencias.get("zabbix_origens", [])
+    else:
+        # Migra as permissões da extensão instalada antes de atualizar seus arquivos.
+        anterior = destino / "manifest.json"
+        manifesto = json.loads((anterior if anterior.exists() else origem / "manifest.json").read_text(encoding="utf-8"))
+        dominios = [url.removesuffix("/*") for script in manifesto.get("content_scripts", [])
+                    if "zabbix.js" in script.get("js", []) for url in script.get("matches", [])]
+    if not isinstance(dominios, list) or not dominios or any(
+            not isinstance(url, str) or not url_valida(url) or "*" in url or
+            urlsplit(url).path not in ("", "/") or urlsplit(url).query or urlsplit(url).fragment for url in dominios):
+        raise ValueError("Configure zabbix_origens em .noc_data/extensao.json com origens HTTP/HTTPS válidas.")
+    dominios = list(dict.fromkeys(url.rstrip("/") for url in dominios))
+    configuracao.parent.mkdir(parents=True, exist_ok=True)
+    if not configuracao.exists():
+        configuracao.write_text(json.dumps({"zabbix_origens": dominios}, indent=2), encoding="utf-8")
     destino.mkdir(parents=True, exist_ok=True)
-    if origem.resolve() != destino.resolve():
-        for nome in ARQUIVOS_EXTENSAO:
-            arquivo = origem / nome
-            alvo = destino / nome
-            alvo.parent.mkdir(parents=True, exist_ok=True)
-            if not alvo.exists() or alvo.read_bytes() != arquivo.read_bytes():
-                shutil.copy2(arquivo, alvo)
+    for nome in ARQUIVOS_EXTENSAO:
+        arquivo = origem / nome
+        alvo = destino / nome
+        alvo.parent.mkdir(parents=True, exist_ok=True)
+        conteudo = arquivo.read_bytes()
+        if nome == "manifest.json":
+            manifesto = json.loads(conteudo)
+            antigos = {url for script in manifesto["content_scripts"] if "zabbix.js" in script["js"] for url in script["matches"]}
+            manifesto["host_permissions"] = [url for url in manifesto["host_permissions"] if url not in antigos] + [url + "/*" for url in dominios]
+            for script in manifesto["content_scripts"]:
+                if "zabbix.js" in script["js"]:
+                    script["matches"] = [url + "/*" for url in dominios]
+            conteudo = json.dumps(manifesto, ensure_ascii=False, indent=2).encode("utf-8")
+        elif nome == "background.js":
+            linhas = conteudo.decode("utf-8").splitlines()
+            conteudo = ("\n".join("const ZABBIX = new Set(" + json.dumps(dominios) + ");" if linha.startswith("const ZABBIX = new Set(") else linha for linha in linhas) + "\n").encode("utf-8")
+        if not alvo.exists() or alvo.read_bytes() != conteudo:
+            alvo.write_bytes(conteudo)
     return destino
 
 

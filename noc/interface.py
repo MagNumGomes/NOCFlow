@@ -1698,12 +1698,16 @@ def main():
     root = tk.Tk()
     try:
         config = carregar_config(diretorio_aplicacao())
-        preparar_extensao(config.diretorio)
         config.dados_dir.mkdir(parents=True, exist_ok=True)
         handler = RotatingFileHandler(config.dados_dir / "noc.log", maxBytes=1_000_000, backupCount=2, encoding="utf-8")
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(threadName)s] %(message)s"))
         logging.getLogger("noc").addHandler(handler)
         logging.getLogger("noc").setLevel(logging.INFO)
+        try:
+            preparar_extensao(config.diretorio)
+        except Exception:
+            # A extensão é opcional: uma configuração inválida não pode impedir o uso do aplicativo.
+            logging.getLogger("noc").warning("Não foi possível atualizar a extensão do Edge.", exc_info=True)
         NOCFlow(root, config)
     except Exception as exc:
         messagebox.showerror("Não foi possível iniciar", str(exc), parent=root)
