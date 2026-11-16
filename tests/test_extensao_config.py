@@ -20,7 +20,7 @@ class ConfigExtensaoTests(unittest.TestCase):
             for _ in range(2):
                 preparar_extensao(raiz)
                 manifesto = json.loads(destino.joinpath("manifest.json").read_text(encoding="utf-8"))
-                self.assertEqual(manifesto["version"], "2.2.0")
+                self.assertEqual(manifesto["version"], "2.2.2")
                 self.assertIn("https://monitor.example.org/*", manifesto["host_permissions"])
                 self.assertNotIn("https://zabbix.example.com/*", manifesto["host_permissions"])
                 self.assertIn('"https://monitor.example.org"', destino.joinpath("background.js").read_text(encoding="utf-8"))

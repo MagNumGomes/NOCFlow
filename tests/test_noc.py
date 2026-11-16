@@ -55,15 +55,18 @@ class DadosTests(unittest.TestCase):
     def test_html_preserva_texto_sem_injetar_marcacao(self):
         html = gerar_html(dados_incidente(alerta='<script>alert("x")</script>', horario="10:42", situacao="valor < 5 & > 1"))
         self.assertNotIn("<script>", html)
-        self.assertIn("&lt;script&gt;", html)
-        self.assertIn("10:42", html)
-        self.assertIn("&amp;", html)
+        self.assertNotIn("&lt;script&gt;", html)
+        self.assertNotIn("10:42", html)
+        self.assertNotIn("<ul>", html)
         com_imagem = gerar_html(
             dados_incidente(link_zabbix="https://zabbix.example.com/tr_events.php?triggerid=1&eventid=2"),
             Image.new("RGB", (4, 4), "orange"),
         )
         self.assertIn("data:image/png;base64,", com_imagem)
         self.assertIn('href="https://zabbix.example.com/tr_events.php?triggerid=1&amp;eventid=2"', com_imagem)
+        self.assertIn('data-nocflow-alerta="1"', com_imagem)
+        self.assertLess(com_imagem.index("href="), com_imagem.index("<img "))
+        self.assertEqual(gerar_html(dados_incidente(link_zabbix="")), "")
 
 
 class RascunhoTests(unittest.TestCase):

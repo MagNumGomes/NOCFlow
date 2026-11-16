@@ -77,6 +77,116 @@ class ExtensaoOperadorTests(unittest.TestCase):
         editor.fill("")
         self.assertIn("erro", self.page.evaluate("() => assinarMensagem('Operador Teste')"))
 
+    def test_tags_solicitante_servico_e_apontamento_na_mesma_linha(self):
+        self.page.set_content('''<form><input id="TicketSubject"><textarea class="description"></textarea>
+          <input type="radio" name="tipo" id="pub" checked><label for="pub">Público</label>
+          <input type="radio" name="tipo" id="int"><label for="int">Interno</label>
+          <label for="client">Solicitante</label><input id="client" class="clients" type="hidden">
+          <label for="service">Serviço</label><input id="service" class="service" type="hidden">
+          <table><thead><tr><th>Tempo apontado</th><th>Atividade</th></tr></thead><tbody>
+          <tr><td><input value="00:00"></td><td><select><option></option><option>Observability</option></select></td></tr>
+          <tr><td><input value=""></td><td><select><option></option><option>Observability</option></select></td></tr>
+          </tbody></table></form>''')
+        self.page.evaluate('''() => {
+          const cliente = document.querySelector('#client');
+          const servico = document.querySelector('#service');
+          let selecionado = null;
+          let atualServico = null;
+          const select2 = {
+            opts: {ajax: {url: '/Ticket/JsonGetClients', type: 'GET',
+              data: (q, page) => ({q, pageLimit: 50, page}),
+              results: r => ({results: r.results, more: r.more})}},
+            data: item => { if (item === undefined) return selecionado; selecionado = item; return select2; }
+          };
+          const widget = {
+            setValue: valor => { atualServico = valor; window.servicoSelecionado = valor; },
+            getValue: () => atualServico,
+            getOptions: () => ({searchUrl: '/Service/JsonSearchServices', type: 'GET', ticketType: '1',
+              urlParameters: {'accessProfileList[0]': 1403}}),
+            getItems: () => ({data: []})
+          };
+          cliente.__noc = {select2};
+          Object.assign(servico.__noc = {}, widget);
+          window.clienteSelecionado = () => selecionado;
+          const jq = alvo => ({
+            data(nome, valor) {
+              alvo.__noc = alvo.__noc || {};
+              if (arguments.length > 1) { alvo.__noc[nome] = valor; return this; }
+              if (nome === undefined) return alvo.__noc;
+              return alvo.__noc[nome];
+            },
+            trigger(evento) { alvo.dispatchEvent(new CustomEvent(evento.type, {bubbles: true, detail: evento})); return this; },
+            each() { return this; }
+          });
+          jq.ajax = opcoes => {
+            const url = String(opcoes.url);
+            let resposta;
+            if (url.includes('JsonSearchServices')) {
+              window.ultimaBuscaServico = opcoes.data.query;
+              resposta = [{Id: 3538, value: JSON.stringify({id: 3538, name: 'Database', path: 'Database', allowSelection: true}),
+                html: '<div>Database</div>', items: [
+                  {Id: 870802, value: JSON.stringify({id: 870802, name: 'SQL Server', path: 'Database', allowSelection: true}),
+                   html: '<div class="notActive">SQL Server</div>', items: []},
+                  {Id: 907198, value: JSON.stringify({id: 907198, name: 'SQL Server', path: 'Database', allowSelection: true, allowFinishTicket: true}),
+                   html: '<div>SQL Server</div>', items: []}
+                ]}];
+            } else {
+              window.ultimaBuscaSolicitante = opcoes.data.q;
+              resposta = {results: [
+                {id: '24729635', text: 'Ferreira e Chagas Advogados', name: '[Ferreira e Chagas] SQLServer | FERRSDB1',
+                 personType: 4, email: '', hierarchy: [{id: 22614729, personType: 2}, {id: 22614932, personType: 4}]},
+                {id: '34914451', text: 'Ferreira e Chagas Advogados', name: 'Aline Greghi Hernandez',
+                 personType: 1, email: 'aline@example.com', hierarchy: [{id: 22614729, personType: 2}, {id: 22614932, personType: 4}, {id: 31720188, personType: 1}]}
+              ], more: false};
+            }
+            setTimeout(() => opcoes.success(resposta), 0);
+          };
+          window.jQuery = window.$ = jq;
+        }''')
+        self.page.add_script_tag(content=(self.raiz / "preencher.js").read_text(encoding="utf-8").replace("export async function", "async function", 1))
+        for _ in range(2):
+            resultado = self.page.evaluate("() => preencherFormulario({assunto:'Teste',html:'<p>Link</p>',solicitante:'596092884',servico:'DBA SQL'})")
+            self.assertTrue(resultado.get("ok"), resultado)
+        self.assertTrue(self.page.locator("#int").is_checked())
+        self.assertEqual(resultado["campos"]["solicitante"], "preenchido")
+        self.assertEqual(resultado["campos"]["servico"], "preenchido")
+        self.assertEqual(self.page.evaluate("ultimaBuscaSolicitante"), "596092884")
+        self.assertEqual(self.page.evaluate("ultimaBuscaServico"), "SQL Server")
+        self.assertEqual(self.page.evaluate("clienteSelecionado().id"), "24729635")
+        self.assertEqual(self.page.evaluate("clienteSelecionado().personType"), 4)
+        self.assertEqual(self.page.evaluate("servicoSelecionado.id"), 907198)
+        self.assertEqual(self.page.evaluate("servicoSelecionado.name"), "SQL Server")
+        self.assertEqual(self.page.locator("tbody input").evaluate_all("els => els.map(e => e.value)"), ["00:03", ""])
+        self.assertEqual(self.page.locator("tbody select").evaluate_all("els => els.map(e => e.value)"), ["Observability", ""])
+
+    def test_print_usa_upload_do_editor_em_vez_de_base64_no_corpo(self):
+        self.page.set_content('<input id="TicketSubject"><div class="fr-element" contenteditable="true"></div>')
+        self.page.evaluate('''() => {
+          const el = document.querySelector('.fr-element');
+          window.FroalaEditor = {INSTANCES: [{el, html: {get: () => el.innerHTML, set: v => el.innerHTML=v},
+            image: {upload: files => { window.arquivos = files.map(f => [f.name, f.type, f.size]);
+              el.innerHTML += '<img src="https://empresa.movidesk.com/Storage/alerta.png">'; }}}]};
+        }''')
+        self.page.add_script_tag(content=(self.raiz / "preencher.js").read_text(encoding="utf-8").replace("export async function", "async function", 1))
+        resultado = self.page.evaluate("() => preencherFormulario({assunto:'Teste',html:'<p>Link</p><img src=\"data:image/png;base64,aGVsbG8=\">'})")
+        self.assertTrue(resultado.get("ok"), resultado)
+        self.assertEqual(self.page.evaluate("arquivos[0]"), ["alerta.png", "image/png", 5])
+        self.assertNotIn("base64", self.page.locator(".fr-element").inner_html())
+
+    def test_coleta_tags_sem_duplicar_tecnologia(self):
+        self.page.set_content('''<table><tr><td>Tags</td><td>
+          <span class="tag">Dataside: DBA MySQL</span><span class="tag">Dataside: DBA mySQL</span>
+          <span class="tag">Movidesk: 1249803422</span></td></tr></table>''')
+        self.page.add_script_tag(content=(self.raiz / "coletor.js").read_text(encoding="utf-8"))
+        dados = self.page.evaluate("() => NOCFlowZabbix.extrair(document, 'https://zabbix.example.com/tr_events.php?eventid=1')")
+        from noc.incidentes import importar_eventos, FilaIncidentes
+        eventos = importar_eventos({"versao": 1, "origem": "zabbix", "eventos": [dados]})
+        fila = FilaIncidentes()
+        ids = fila.importar(eventos)
+        item = next(i for i in fila.itens if i["id"] == ids[0])
+        self.assertEqual(item["dados"]["solicitante"], "1249803422")
+        self.assertEqual(item["dados"]["servico"], "DBA MySQL")
+
     def test_popup_salva_nome_e_solicita_assinatura_apenas_no_whatsapp(self):
         self.page.set_content((self.raiz / "popup.html").read_text(encoding="utf-8"))
         self.page.evaluate('''() => {

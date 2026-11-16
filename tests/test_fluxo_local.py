@@ -175,10 +175,8 @@ class ColetorDOMTests(unittest.TestCase):
                 for nome in ("coletor.js", "zabbix.js"):
                     page.add_script_tag(content=(raiz / "edge_extension" / nome).read_text(encoding="utf-8"))
                 page.locator("#noc-zabbix > summary").click()
-                page.get_by_role("button", name="Copiar dados para NOCFlow", exact=True).click()
-                page.wait_for_function("Boolean(window.textoCopiado)")
-                self.assertFalse(carregamentos)
                 page.get_by_text("Mais opções", exact=True).click()
+                self.assertFalse(carregamentos)
                 botao = page.get_by_role("button", name="Copiar imagem Host / Trigger / Severity", exact=True)
                 botao.click()
                 page.wait_for_function("window.copias.length === 1")
@@ -257,7 +255,7 @@ class ColetorDOMTests(unittest.TestCase):
                   const dados = await NocZabbix.completar(eventos, async url => { chamadas++; return {ok:true, url, text: async () => '<table><tr><td>Operational data</td><td>RAM 99%<br>CPU 90%</td></tr></table>'}; });
                   return {chamadas, dados};
                 }""")
-                self.assertEqual(resultado["chamadas"], 1)
+                self.assertEqual(resultado["chamadas"], 2)  # Também busca as tags ausentes no detalhe.
                 self.assertEqual(resultado["dados"][1]["situacao"], "RAM 99%\nCPU 90%")
             finally:
                 browser.close()

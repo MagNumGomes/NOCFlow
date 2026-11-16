@@ -180,8 +180,8 @@ class HistoricoTests(unittest.TestCase):
         self.assertIn("ticket", validar_dados(d, "Teams"))
         self.assertEqual(validar_dados(d, "Teams", permitir_sem_ticket=True), {})
         html = gerar_html(d, Image.new("RGB", (3, 3)))
-        self.assertIn("Relato &lt;original&gt;", html)
-        self.assertIn("Serviço indisponível", html)
+        self.assertNotIn("Relato &lt;original&gt;", html)
+        self.assertNotIn("Serviço indisponível", html)
         self.assertIn("data:image/png;base64", html)
 
 

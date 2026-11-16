@@ -108,13 +108,8 @@ def codificar_imagem_png(imagem):
 def gerar_html(dados, imagem=None):
     d = {campo: escape(dados.get(campo, ""), quote=True) for campo in CAMPOS_FORMULARIO}
     b64 = codificar_imagem_png(imagem if imagem is not None else dados.get("_imagem"))
-    itens = (("Alerta", "alerta"), ("Servidor", "servidor"),
-             ("Severidade", "severidade"), ("Dados Operacionais", "situacao"),
-             ("Horário da Falha", "horario"))
-    itens += tuple((rotulo, campo) for rotulo, campo in (("Origem", "origem_atendimento"), ("Natureza", "natureza"),
-                   ("Serviço", "servico"), ("Impacto relatado", "impacto"), ("Prioridade aplicada", "prioridade"),
-                   ("Relato original", "relato_original")) if d.get(campo))
-    linhas = "".join(f"<li><strong>{label}:</strong> {d[campo].replace(chr(10), '<br>')}</li>" for label, campo in itens)
-    link = f'<p><strong>Link do Zabbix:</strong> <a href="{d["link_zabbix"]}">{d["link_zabbix"]}</a></p>' if d["link_zabbix"] else ""
-    evidencia = f'<p><img src="data:image/png;base64,{b64}" alt="Evidência" style="max-width:100%;height:auto"></p>' if b64 else ""
-    return f"<p><strong>Abertura de Ticket via NOCFlow:</strong></p><ul>{linhas}</ul>{link}{evidencia}"
+    link = f'<p style="margin:0"><a href="{d["link_zabbix"]}">{d["link_zabbix"]}</a></p>' if d["link_zabbix"] else ""
+    evidencia = f'<p style="margin:0"><img src="data:image/png;base64,{b64}" alt="Evidência" style="max-width:100%;height:auto"></p>' if b64 else ""
+    if not link and not evidencia:
+        return ""
+    return f'<div data-nocflow-alerta="1">{link}{evidencia}</div>'

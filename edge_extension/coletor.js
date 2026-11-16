@@ -53,7 +53,28 @@
       }))];
       if (horas.length === 1) dados.horario = horas[0];
     }
-    return {...dados, link_zabbix: url.href, eventid: url.searchParams.get("eventid")};
+    const tags = [];
+    for (const tr of doc.querySelectorAll("tr")) {
+      if (tr.cells.length !== 2 || normalizar(texto(tr.cells[0])) !== "tags") continue;
+      const blocos = Array.from(tr.cells[1].querySelectorAll(".tag"));
+      const valores = blocos.length ? blocos.map(bloco => {
+        const nome = texto(bloco.querySelector(".tag-name")).trim();
+        const valor = texto(bloco.querySelector(".tag-value")).trim();
+        if (nome || valor) return `${nome}: ${valor}`.replace(/^:\s*/, "").replace(/:\s*$/, "").trim();
+        return texto(bloco).trim();
+      }) : texto(tr.cells[1]).split("\n").map(valor => valor.trim()).filter(Boolean);
+      for (const valor of valores) if (valor && !tags.includes(valor)) tags.push(valor);
+    }
+    function tag(nome) {
+      const unicos = new Map();
+      for (const t of tags.filter(t => normalizar(t.split(":")[0]) === nome)) {
+        const valor = t.slice(t.indexOf(":") + 1).trim();
+        if (valor && !unicos.has(normalizar(valor))) unicos.set(normalizar(valor), valor);
+      }
+      const valores = [...unicos.values()];
+      return valores.length === 1 ? valores[0] : "";
+    }
+    return {...dados, tags: tags.join("\n"), solicitante: tag("movidesk"), servico: tag("dataside"), link_zabbix: url.href, eventid: url.searchParams.get("eventid")};
   }
   function selecionados(doc, href) {
     const eventos = new Map();
@@ -80,13 +101,14 @@
     async function trabalhar() {
       while (indice < resultado.length) {
         const evento = resultado[indice++];
-        if (campos.every(c => evento[c])) continue;
+        if (campos.every(c => evento[c]) && evento.tags !== undefined) continue;
         try {
           const resposta = await buscar(evento.link_zabbix, {credentials: "same-origin", signal: AbortSignal.timeout(8000)});
           if (!resposta.ok || new URL(resposta.url || evento.link_zabbix).origin !== new URL(evento.link_zabbix).origin) throw new Error("Detalhe indisponível");
           const doc = new DOMParser().parseFromString(await resposta.text(), "text/html");
           const detalhe = extrair(doc, evento.link_zabbix);
           for (const campo of campos) if (!evento[campo]) evento[campo] = detalhe[campo];
+          for (const campo of ["tags", "solicitante", "servico"]) evento[campo] = detalhe[campo];
         } catch { evento.aviso = "Detalhe indisponível; revise os campos vazios no NOCFlow."; }
       }
     }

@@ -18,6 +18,8 @@ from noc.movidesk import MovideskWorker
 
 
 FORMULARIO = b"""<html><body><input id="TicketSubject">
+<input type="radio" name="TicketType" id="publico" checked><label for="publico">Publico</label>
+<input type="radio" name="TicketType" id="interno"><label for="interno">Interno</label>
 <select id="TicketCategory"><option value="">Selecione</option><option value="alerta">Alerta</option></select>
 <select id="TicketUrgency"><option value="">Selecione</option><option value="2">2. Alta</option><option value="3">3. M\xc3\xa9dia</option></select>
 <iframe class="tox-edit-area__iframe" srcdoc="<html><body contenteditable='true'><p>Atenciosamente, Equipe NOC</p></body></html>"></iframe>
@@ -26,6 +28,7 @@ FORMULARIO = b"""<html><body><input id="TicketSubject">
   frame.contentDocument.body.addEventListener('change', () => {
     fetch('/resultado', {method: 'POST', body: JSON.stringify({
       assunto: document.querySelector('input').value,
+      interno: document.querySelector('#interno').checked,
       categoria: document.querySelector('#TicketCategory').value,
       urgencia: document.querySelector('#TicketUrgency').value,
       texto: frame.contentDocument.body.innerText,
@@ -125,9 +128,10 @@ class MovideskLocalTests(unittest.TestCase):
                     self.assertIn("sessao=ja-logado", cookies.get(timeout=5))
                     self.assertEqual(recebido["assunto"], f"{dados['alerta']} - host-01")
                     self.assertEqual(recebido["categoria"], "alerta")
+                    self.assertTrue(recebido["interno"])
                     self.assertEqual(recebido["urgencia"], "3")
-                    self.assertIn(dados["alerta"], recebido["texto"])
-                    self.assertIn("10:42", recebido["texto"])
+                    self.assertNotIn(dados["alerta"], recebido["texto"])
+                    self.assertNotIn("10:42", recebido["texto"])
                     self.assertIn("Atenciosamente, Equipe NOC", recebido["texto"])
                     self.assertEqual(recebido["scripts"], 0)
                     self.assertFalse(recebido["injetado"])
@@ -209,7 +213,7 @@ class MovideskLocalTests(unittest.TestCase):
                     self.assertFalse(worker.is_alive())
                     self.assertFalse(existente.is_closed())
                     self.assertFalse(segunda.is_closed())
-                    self.assertIn("Segundo incidente", segunda.locator("input").input_value())
+                    self.assertIn("Segundo incidente", segunda.locator("#TicketSubject").input_value())
                 finally:
                     worker.encerrar.set()
                     if worker.ident:

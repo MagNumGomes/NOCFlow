@@ -172,6 +172,9 @@ class MovideskWorker(threading.Thread):
             "categoria": dados.get("categoria", "Alerta") or "Alerta",
             "link_zabbix": dados.get("link_zabbix", ""),
             "html": gerar_html(dados),
+            "solicitante": dados.get("solicitante", ""),
+            "servico": dados.get("servico", ""),
+            "exigir_interno": True,
             "timeout_login": self.config.timeout_login, "timeout_retorno": self.config.timeout_ticket,
         }, self.config.timeout_login)
         self.eventos.put(("pedido_status", incidente, {"estado": "abrindo"}))

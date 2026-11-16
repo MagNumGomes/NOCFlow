@@ -196,7 +196,7 @@ Instale a extensão no mesmo perfil do Edge em que você usa o Movidesk e tente 
                         mensagem = evento.get("mensagem", "")[:1200]
                         if tipo == "ok" and "campos" in evento:
                             campos = evento["campos"]
-                            permitidos = {"assunto", "descricao", "tipo", "categoria", "urgencia", "tempo_apontado", "atividade"}
+                            permitidos = {"assunto", "descricao", "tipo", "categoria", "urgencia", "tempo_apontado", "atividade", "solicitante", "servico"}
                             if not isinstance(campos, dict) or set(campos) - permitidos or any(
                                 v not in ("preenchido", "pendente", "nao_localizado") for v in campos.values()
                             ):

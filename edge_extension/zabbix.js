@@ -136,10 +136,6 @@
       "text/html": new Blob([conteudo.outerHTML], {type: "text/html"})
     })]);
   }
-  botao(lista ? "Copiar selecionados para NOCFlow" : "Copiar dados para NOCFlow", async () => {
-    await navigator.clipboard.writeText(JSON.stringify(await payload(extensao)));
-    return "Dados copiados. Use Importar dados no aplicativo NOCFlow.";
-  }, !extensao);
   if (extensao) botao(lista ? "Enviar selecionados ao NOCFlow" : "Enviar ao NOCFlow", async () => {
     const dados = await payload(true);
     await mensagem({tipo: "importar_zabbix", payload: dados});

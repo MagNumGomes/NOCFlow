@@ -52,7 +52,7 @@ def importar_eventos(conteudo):
         if not isinstance(evento, dict):
             raise ValueError("Evento inválido na importação.")
         dados = {}
-        for campo in CAMPOS_EVENTO + ("link_zabbix",):
+        for campo in CAMPOS_EVENTO + ("link_zabbix", "tags", "solicitante", "servico"):
             valor = evento.get(campo, "")
             if not isinstance(valor, str) or len(valor) > 30000:
                 raise ValueError(f"Campo inválido ou muito extenso: {campo}.")
