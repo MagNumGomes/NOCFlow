@@ -483,34 +483,76 @@ export async function preencherFormulario(dados) {
      const antes = document.createElement("div");
      antes.innerHTML = froala.html.get();
      const fontesAnteriores = new Set(Array.from(antes.querySelectorAll("img")).map(img => img.getAttribute("src")));
+     const imagemNova = img => {
+       const src = img.getAttribute("src");
+       return Boolean(src && !fontesAnteriores.has(src) && /^https?:/i.test(new URL(src, location.href).href));
+     };
+     const acharLink = doc => {
+       const links = Array.from(doc.querySelectorAll("a[href]"));
+       let esperado = "";
+       try { esperado = dados.link_zabbix ? new URL(dados.link_zabbix, location.href).href : ""; } catch {}
+       return links.find(a => esperado && (a.href === esperado || a.getAttribute("href") === dados.link_zabbix)) ||
+         links.find(a => /tr_events\.php/i.test(a.getAttribute("href") || "")) ||
+         links[0] ||
+         doc.querySelector('[data-nocflow-alerta="1"], [data-nocflow-conteudo="1"]');
+     };
+     const novasImagens = doc => Array.from(doc.querySelectorAll("img")).filter(imagemNova);
+     // O print deve ficar logo abaixo do link, nunca depois da assinatura.
+     const abaixoDoLink = doc => {
+       const link = acharLink(doc);
+       const novas = novasImagens(doc);
+       if (!link || !novas.length) return false;
+       const img = novas[0];
+       const bloco = link.closest('[data-nocflow-alerta="1"], [data-nocflow-conteudo="1"]');
+       if (bloco) {
+         const pLink = link.closest("p");
+         if (pLink && img.closest("p") === pLink) return false;
+         return bloco.contains(img) && Boolean(link.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING);
+       }
+       const referencia = link.closest("p") || link;
+       let seguinte = referencia.nextElementSibling;
+       while (seguinte && !seguinte.textContent.trim() && !seguinte.querySelector("img")) seguinte = seguinte.nextElementSibling;
+       return Boolean(seguinte && seguinte.contains(img));
+     };
      froala.events?.focus?.();
-      const blocoEditor = froala.el?.querySelector('[data-nocflow-conteudo="1"]');
-      froala.selection?.setAtEnd?.(blocoEditor || froala.el);
+     const blocoEditor = froala.el?.querySelector('[data-nocflow-conteudo="1"]');
+     froala.selection?.setAtEnd?.(blocoEditor || froala.el);
      froala.image.upload(arquivos);
-     let enviado = false;
-     for (let i = 0; i < 150; i++) {
+     let posicionado = false;
+     let viuImagem = false;
+     for (let tentativa = 0; tentativa < 20; tentativa++) {
        await new Promise(resolve => setTimeout(resolve, 200));
-       const atual = document.createElement("div");
-       atual.innerHTML = froala.html.get();
-       enviado = Array.from(atual.querySelectorAll("img")).filter(img => {
-         const src = img.getAttribute("src");
-         return src && !fontesAnteriores.has(src) && /^https?:/i.test(new URL(src, location.href).href);
-       }).length >= arquivos.length;
-       if (enviado) break;
+       const corpo = document.createElement("div");
+       corpo.innerHTML = froala.html.get();
+       const novas = novasImagens(corpo);
+       viuImagem = viuImagem || novas.length > 0;
+       const link = acharLink(corpo);
+       if (novas.length && link && abaixoDoLink(corpo)) {
+         posicionado = true;
+         break;
+       }
+       if (!novas.length || !link) continue;
+       const referencia = link.closest("p") || link;
+       const bloco = link.closest('[data-nocflow-alerta="1"], [data-nocflow-conteudo="1"]');
+       const caixa = document.createElement("p");
+       caixa.setAttribute("data-nocflow-print", "1");
+       caixa.style.margin = "0";
+       for (const img of novas) caixa.append(img);
+       if (bloco && referencia === bloco) {
+         const alvo = Array.from(bloco.children).find(item => item.contains(link)) || link;
+         alvo.after(caixa);
+       } else {
+         referencia.after(caixa);
+       }
+       froala.html.set(corpo.innerHTML);
+       if (textarea) textarea.value = corpo.innerHTML;
+       try { froala.events?.trigger?.("contentChanged"); } catch {}
      }
-      if (!enviado) throw new Error("Upload do print não confirmado pelo Movidesk. Revise o anexo antes de salvar.");
-      // Alguns editores inserem o upload no fim do corpo, depois da assinatura.
-      // Reagrupa somente as imagens novas dentro do bloco do alerta.
-      const corpo = document.createElement("div");
-      corpo.innerHTML = froala.html.get();
-      const grupo = corpo.querySelector('[data-nocflow-conteudo="1"]');
-      if (!grupo) throw new Error("O editor removeu o bloco do alerta. Revise link e print antes de salvar.");
-      for (const img of corpo.querySelectorAll("img")) {
-        if (!fontesAnteriores.has(img.getAttribute("src"))) grupo.append(img);
-      }
-      froala.html.set(corpo.innerHTML);
-      if (textarea) textarea.value = corpo.innerHTML;
-      froala.events?.trigger?.("contentChanged");
+     if (!posicionado) {
+       throw new Error(viuImagem
+         ? "O Movidesk não confirmou o print abaixo do link. Revise o corpo antes de salvar."
+         : "Upload do print não confirmado pelo Movidesk. Revise o anexo antes de salvar.");
+     }
    }
    const htmlCorpo = (froala ? froala.html?.get?.() : "") || frElement?.innerHTML || body?.innerHTML || ce?.innerHTML || textarea?.value || "";
    const recebido = document.createElement("div"), esperado = document.createElement("div");

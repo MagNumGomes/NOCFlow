@@ -163,15 +163,23 @@ class ExtensaoOperadorTests(unittest.TestCase):
         self.page.set_content('<input id="TicketSubject"><div class="fr-element" contenteditable="true"></div>')
         self.page.evaluate('''() => {
           const el = document.querySelector('.fr-element');
+          el.innerHTML = '<p>Atenciosamente,</p><p><img src="https://empresa.movidesk.com/Storage/assinatura.png"></p>';
           window.FroalaEditor = {INSTANCES: [{el, html: {get: () => el.innerHTML, set: v => el.innerHTML=v},
             image: {upload: files => { window.arquivos = files.map(f => [f.name, f.type, f.size]);
-              el.innerHTML += '<img src="https://empresa.movidesk.com/Storage/alerta.png">'; }}}]};
+              el.innerHTML += '<p><img src="https://empresa.movidesk.com/Storage/alerta.png"></p>'; }}}]};
         }''')
         self.page.add_script_tag(content=(self.raiz / "preencher.js").read_text(encoding="utf-8").replace("export async function", "async function", 1))
-        resultado = self.page.evaluate("() => preencherFormulario({assunto:'Teste',html:'<p>Link</p><img src=\"data:image/png;base64,aGVsbG8=\">'})")
+        resultado = self.page.evaluate("() => preencherFormulario({assunto:'Teste',link_zabbix:'https://zabbix.example.com/tr_events.php?eventid=1',html:'<p><a href=\\\"https://zabbix.example.com/tr_events.php?eventid=1\\\">https://zabbix.example.com/tr_events.php?eventid=1</a></p><img src=\\\"data:image/png;base64,aGVsbG8=\\\">'})")
         self.assertTrue(resultado.get("ok"), resultado)
         self.assertEqual(self.page.evaluate("arquivos[0]"), ["alerta.png", "image/png", 5])
-        self.assertNotIn("base64", self.page.locator(".fr-element").inner_html())
+        html = self.page.locator(".fr-element").inner_html()
+        self.assertNotIn("base64", html)
+        bloco = self.page.locator('[data-nocflow-conteudo="1"]').inner_html()
+        self.assertIn("/Storage/alerta.png", bloco)
+        self.assertNotIn("/Storage/assinatura.png", bloco)
+        self.assertLess(html.index("tr_events.php"), html.index("/Storage/alerta.png"))
+        self.assertLess(html.index("/Storage/alerta.png"), html.index("Atenciosamente"))
+        self.assertIn("/Storage/assinatura.png", html)
 
     def test_coleta_tags_sem_duplicar_tecnologia(self):
         self.page.set_content('''<table><tr><td>Tags</td><td>
