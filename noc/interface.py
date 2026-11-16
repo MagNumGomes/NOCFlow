@@ -4,9 +4,9 @@ import logging
 from dataclasses import replace
 from copy import deepcopy
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 import queue
 import subprocess
-import threading
 import time
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -14,6 +14,7 @@ from tkinter import messagebox, ttk
 from PIL import Image, ImageGrab, ImageTk
 import pyperclip
 
+from .concorrencia import disparar_operacao
 from .edge_bridge import abrir_no_edge, preparar_extensao
 from .tokens_ia import ConsumoIA
 from .recortes_email import CAMPOS_RECORTE, EditorRecortes, VisualizadorImagem, montar_recortes
@@ -61,6 +62,7 @@ class NOCFlow:
         self.nome_em_edicao = not bool(self.config.nome_operador)
         self.estado_conexao = "desconectado"
         self.perfis_operacionais = []
+        self.perfis_chave = None
         self.erro_perfis = ""
         self.central = None
         self.ultima_agenda = 0
@@ -1035,21 +1037,11 @@ class NOCFlow:
         self.atualizar_controles()
         return self.sequencia
 
-    def executar(self, tipo, mensagem, funcao):
+    def executar(self, tipo, mensagem, funcao, mensagem_log=None):
         identificador = self.iniciar_operacao(tipo, mensagem)
         if identificador is None:
             return
-        eventos = self.eventos
-
-        def tarefa():
-            try:
-                resultado = funcao()
-                eventos.put((f"{tipo}_ok", identificador, resultado))
-            except Exception as exc:
-                logging.getLogger("noc").exception("Falha na operação %s", tipo)
-                eventos.put(("erro", identificador, str(exc)))
-
-        threading.Thread(target=tarefa, name=f"noc-{tipo}", daemon=True).start()
+        disparar_operacao(self.eventos, identificador, tipo, funcao, mensagem_log)
 
     @staticmethod
     def ler_clipboard():
@@ -1154,15 +1146,7 @@ class NOCFlow:
         identificador = self.iniciar_operacao("ia", "Lendo print…")
         if identificador is None:
             return
-
-        def executar_ia():
-            try:
-                eventos.put(("ia_ok", identificador, tarefa()))
-            except Exception as exc:
-                logging.getLogger("noc").exception("Falha na extração com IA")
-                eventos.put(("erro", identificador, str(exc)))
-
-        threading.Thread(target=executar_ia, name="noc-ia", daemon=True).start()
+        disparar_operacao(self.eventos, identificador, "ia", tarefa, "Falha na extração com IA")
 
     def copiar_assunto_email(self):
         if self.fechando or self.carregando or not self.validar("E-mail"):
@@ -1658,14 +1642,25 @@ class NOCFlow:
         self.movidesk.encerrar.set()
 
     def carregar_perfis_operacionais(self):
-        self.perfis_operacionais = []
-        self.erro_perfis = ""
         arquivo = self.fila.operacional.get("arquivo_perfis")
-        if arquivo:
-            try:
-                self.perfis_operacionais = carregar_perfis(arquivo)
-            except (ValueError, OSError) as exc:
-                self.erro_perfis = f"Perfis indisponíveis: {exc}"
+        if not arquivo:
+            self.perfis_operacionais = []
+            self.perfis_chave = None
+            self.erro_perfis = ""
+            return
+        try:
+            caminho = Path(arquivo)
+            stat = caminho.stat()
+            chave = (str(caminho), stat.st_mtime_ns, stat.st_size)
+            if chave == self.perfis_chave and not self.erro_perfis:
+                return
+            self.perfis_operacionais = carregar_perfis(caminho)
+            self.perfis_chave = chave
+            self.erro_perfis = ""
+        except (ValueError, OSError) as exc:
+            self.perfis_operacionais = []
+            self.perfis_chave = None
+            self.erro_perfis = f"Perfis indisponíveis: {exc}"
 
     def avaliar_perfil(self, dados):
         if self.fila.operacional.get("arquivo_perfis"):

@@ -51,7 +51,7 @@ class ExtracaoLocalTests(unittest.TestCase):
             self.assertEqual(extrair_dados(self.config, self.imagem, lambda t, d: eventos.append((t, d)), permitir_ia=True), DADOS)
             gemini.assert_called_once()
             groq.assert_called_once()
-            self.assertEqual([d for t, d in eventos if t == "extracao_metricas"][0]["chamadas"], 2)
+            self.assertEqual(next(d for t, d in eventos if t == "extracao_metricas")["chamadas"], 2)
 
     def test_resposta_parcial_groq_deixa_apenas_pendencias_para_visao(self):
         parcial = {**DADOS, "horario": ""}

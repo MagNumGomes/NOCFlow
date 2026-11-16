@@ -1,4 +1,4 @@
-NOCFLOW 2.1.0 — LOCAL PRIMEIRO
+NOCFLOW 2.2.3 — LOCAL PRIMEIRO
 
 ABRIR
 Abra NOCFlow.exe. Mantenha _internal junto dele.
@@ -74,5 +74,5 @@ O login permanece no Edge. Fechar o NOCFlow não fecha suas guias.
 ATUALIZAR / DISTRIBUIR
 Copie a pasta NOCFlow inteira. Os dados locais sobrevivem a builds.
 Rascunhos antigos são migrados para a fila no próximo salvamento.
-Veja manual.md neste pacote para o passo a passo e solução de problemas.
+Veja docs/manual.md neste pacote para o passo a passo e solução de problemas.
 README.md apresenta o projeto; docs/arquitetura.md descreve sua estrutura técnica.

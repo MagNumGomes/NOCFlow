@@ -30,8 +30,8 @@ def interpretar_ocr(texto):
         if atual and linhas:
             valores[atual].append("\n".join(linhas).strip())
 
-    for linha in texto.splitlines():
-        linha = linha.strip()
+    for bruta in texto.splitlines():
+        linha = bruta.strip()
         if not linha:
             continue
         match = PADRAO_ROTULO.match(normalizar(linha))

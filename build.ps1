@@ -17,7 +17,7 @@ if (-not (Test-Path $pythonBuild)) {
     Confirmar-Sucesso "criar ambiente Python"
 }
 
-& $pythonBuild -m pip install -r (Join-Path $raiz "requirements-build.txt")
+& $pythonBuild -m pip install -r (Join-Path $raiz "scripts\requirements-build.txt")
 Confirmar-Sucesso "instalar dependencias de build"
 
 Write-Host "Gerando executavel Windows com a extensao do Edge..."
@@ -25,15 +25,14 @@ $destino = Join-Path $pastaDist "NOCFlow"
 $executavel = Join-Path $destino "NOCFlow.exe"
 $emUso = Get-Process -Name "NOCFlow" -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $executavel }
 if ($emUso) { throw "Feche o NOCFlow em $destino antes de substituir esse executavel." }
-& $pythonBuild (Join-Path $raiz "gerar_userscripts.py")
+& $pythonBuild (Join-Path $raiz "scripts\gerar_userscripts.py")
 Confirmar-Sucesso "gerar userscripts Tampermonkey"
-& $pythonBuild -m PyInstaller --noconfirm --clean --distpath $pastaDist --workpath (Join-Path $raiz "build") (Join-Path $raiz "NOC.spec")
+& $pythonBuild -m PyInstaller --noconfirm --clean --distpath $pastaDist --workpath (Join-Path $raiz "build") (Join-Path $raiz "scripts\NOC.spec")
 Confirmar-Sucesso "empacotar aplicativo"
 
-Copy-Item (Join-Path $raiz "LEIA-ME-executavel.txt") $destino
-Copy-Item (Join-Path $raiz "Abrir configuracoes.cmd") $destino
+Copy-Item (Join-Path $raiz "scripts\LEIA-ME-executavel.txt") $destino
+Copy-Item (Join-Path $raiz "scripts\Abrir configuracoes.cmd") $destino
 Copy-Item (Join-Path $raiz "README.md") $destino
-Copy-Item (Join-Path $raiz "manual.md") $destino
 Copy-Item (Join-Path $raiz "docs") $destino -Recurse -Force
 Copy-Item (Join-Path $raiz "tampermonkey") $destino -Recurse -Force
 

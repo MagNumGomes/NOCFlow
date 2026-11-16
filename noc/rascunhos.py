@@ -91,18 +91,18 @@ class RascunhoWorker(threading.Thread):
                     raise OSError("O rascunho original precisa ser recuperado antes de gravar novos dados.")
                 usados = {}
 
-                def codificar(valor):
+                def codificar(valor, _usados=usados, _cache=cache_imagens):
                     if valor is None:
                         return None
                     chave = id(valor)
-                    anterior = usados.get(chave) or cache_imagens.get(chave)
+                    anterior = _usados.get(chave) or _cache.get(chave)
                     if anterior and anterior[0] is valor:
                         convertido = anterior[1]
                     else:
                         buffer = io.BytesIO()
                         valor.save(buffer, format="PNG")
                         convertido = base64.b64encode(buffer.getvalue()).decode("ascii")
-                    usados[chave] = (valor, convertido)
+                    _usados[chave] = (valor, convertido)
                     return convertido
 
                 payload = {"versao": 2, "dados": dados, "imagem": codificar(imagem)}

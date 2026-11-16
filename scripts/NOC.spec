@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules, copy_metadata
 
-raiz = Path(SPECPATH)
+raiz = Path(SPECPATH).parent
 dados = copy_metadata("google-generativeai", recursive=True)
 dados += copy_metadata("groq", recursive=True)
 dados += copy_metadata("winrt-runtime")

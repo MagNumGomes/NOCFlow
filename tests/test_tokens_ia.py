@@ -30,9 +30,9 @@ class TokensTests(unittest.TestCase):
                     config = Config(Path("."), gemini_max_output_tokens=1024)
                     if motivo == 2:
                         with self.assertRaisesRegex(ValueError, "GEMINI_MAX_OUTPUT_TOKENS"):
-                            consultar_gemini(config, Image.new("RGB", (10, 10)), lambda t, d: eventos.append(d))
+                            consultar_gemini(config, Image.new("RGB", (10, 10)), lambda t, d, _ev=eventos: _ev.append(d))
                     else:
-                        self.assertEqual(consultar_gemini(config, Image.new("RGB", (10, 10)), lambda t, d: eventos.append(d)), "{}")
+                        self.assertEqual(consultar_gemini(config, Image.new("RGB", (10, 10)), lambda t, d, _ev=eventos: _ev.append(d)), "{}")
                     enviado = modelo.return_value.generate_content.call_args.kwargs["generation_config"]
                     self.assertEqual(enviado["max_output_tokens"], 1024)
                 self.assertEqual(eventos[0]["total"], 150)

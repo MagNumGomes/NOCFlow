@@ -263,6 +263,6 @@ class ColetorDOMTests(unittest.TestCase):
 
 class UserscriptsTests(unittest.TestCase):
     def test_artefatos_distribuidos_correspondem_as_fontes(self):
-        from gerar_userscripts import artefatos, RAIZ
+        from scripts.gerar_userscripts import artefatos, RAIZ
         for nome, esperado in artefatos():
             self.assertEqual((RAIZ / "tampermonkey" / nome).read_text(encoding="utf-8"), esperado)

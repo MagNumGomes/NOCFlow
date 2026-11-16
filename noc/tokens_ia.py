@@ -19,8 +19,8 @@ class ConsumoIA:
             if dados is None:
                 linhas.append(f"{provedor}: aguardando consulta nesta sessão.")
                 continue
-            def valor(campo):
-                v = dados.get(campo)
+            def valor(campo, _dados=dados):
+                v = _dados.get(campo)
                 return "não informado" if v is None else str(v)
             linhas.append(f"{provedor} · {dados['horario']} · Entrada: {valor('entrada')} · Saída: {valor('saida')} · Total: {valor('total')}")
             linhas.append(f"Total reportado nesta sessão: {self.totais.get(provedor, 0)} tokens.")

@@ -5,7 +5,6 @@ from datetime import timedelta
 import json
 from pathlib import Path
 import queue
-import threading
 import tkinter as tk
 from tkinter import filedialog, ttk
 
@@ -15,6 +14,7 @@ from .agenda_operacional import criar_rotina, registrar_execucao, validar_agenda
 from .assistente_ia import organizar_relato, responder_com_fontes
 from .atendimento import etapa_incidente
 from .base_conhecimento import buscar, carregar_base
+from .concorrencia import disparar_assistente
 from .configuracao import url_valida
 from .edge_bridge import abrir_no_edge
 from .historico_atendimento import (TIPOS_EVENTO, agendar_acao, concluir_acompanhamento, instante,
@@ -496,14 +496,7 @@ class CentralOperacional:
         self.ia_ativa = True
         identificador = self.item()["id"]
         self.aviso.set("Consultando IA de texto; os dados atuais permanecem disponíveis.")
-        def trabalho():
-            try:
-                resultado = funcao()
-                self.eventos.put((ao_concluir, resultado, None, identificador, tarefa))
-            except Exception as exc:
-                mensagem = str(exc) if isinstance(exc, ValueError) else f"Falha no assistente ({type(exc).__name__})."
-                self.eventos.put((None, None, mensagem, identificador, tarefa))
-        threading.Thread(target=trabalho, name="noc-assistente", daemon=True).start()
+        disparar_assistente(self.eventos, identificador, tarefa, funcao, ao_concluir)
 
     def ia_relato(self):
         item = self.item()

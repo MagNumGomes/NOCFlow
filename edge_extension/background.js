@@ -135,8 +135,26 @@ async function preencher(sender) {
   } finally { emAndamento.delete(id); }
 }
 
+function origemValidaZabbix(urlStr) {
+  try {
+    const origem = new URL(urlStr).origin;
+    if (ZABBIX.has(origem)) return true;
+    const manifesto = chrome.runtime.getManifest();
+    for (const script of manifesto.content_scripts || []) {
+      if ((script.js || []).includes("zabbix.js")) {
+        for (const match of script.matches || []) {
+          try {
+            if (new URL(match.replace(/\*$/, "")).origin === origem) return true;
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+  return false;
+}
+
 async function zabbix(mensagem, sender) {
-  if (sender.frameId !== 0 || !ZABBIX.has(new URL(sender.url).origin)) throw new Error("Origem Zabbix não configurada.");
+  if (sender.frameId !== 0 || !origemValidaZabbix(sender.url)) throw new Error("Origem Zabbix não configurada.");
   if (mensagem.tipo === "carregar_renderizador") {
     await chrome.scripting.executeScript({target: {tabId: sender.tab.id}, files: ["vendor/html2canvas.min.js"]});
     return {ok: true};

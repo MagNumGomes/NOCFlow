@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parent
+RAIZ = Path(__file__).resolve().parents[1]
 
 
 def artefatos():

@@ -1,6 +1,6 @@
 # Arquitetura — NOCFlow
 
-Este documento descreve a implementação atual do aplicativo, os contratos de integração e o processo de manutenção. Para os procedimentos do operador, consulte o [manual de uso](../manual.md). A apresentação do projeto está no [README](../README.md).
+Este documento descreve a implementação atual do aplicativo, os contratos de integração e o processo de manutenção. Para os procedimentos do operador, consulte o [manual de uso](manual.md). A apresentação do projeto está no [README](../README.md).
 
 ## Sumário
 
@@ -9,6 +9,7 @@ Este documento descreve a implementação atual do aplicativo, os contratos de i
 - [Responsabilidades dos módulos](#responsabilidades-dos-módulos)
 - [Inicialização, concorrência e encerramento](#inicialização-concorrência-e-encerramento)
 - [Modelo de incidentes](#modelo-de-incidentes)
+- [Central operacional e acompanhamento](#central-operacional-e-acompanhamento)
 - [Contrato de importação](#contrato-de-importação)
 - [Fluxo Zabbix](#fluxo-zabbix)
 - [Ponte HTTP local](#ponte-http-local)
@@ -78,9 +79,19 @@ noc/
   extracao_local.py          Parser de texto e cache de extração
   ocr_windows.py             OCR nativo e reconstrução espacial
   comunicados.py             Validação e templates de texto/HTML
-  clipboard_windows.py      Publicação de imagem no clipboard nativo
+  clipboard_windows.py       Publicação de imagem no clipboard nativo
   recortes_email.py          Editor e montagem dos recortes
   tokens_ia.py               Agregação de consumo da sessão
+  historico_atendimento.py   Linha do tempo e acompanhamento local
+  agenda_operacional.py      Calendários, fusos e rotinas recorrentes
+  regras_operacionais.py     Perfis privados e decisões determinísticas
+  recorrencia.py             Auditoria de recorrência sobre a fila
+  relatorios.py              Diário, passagem de turno e indicadores
+  exportacao_pdf.py          Exportação do relatório em PDF
+  base_conhecimento.py       Busca local em procedimentos selecionados
+  assistente_ia.py           IA de texto sob demanda com fontes
+  central_operacional.py     Telas da Central operacional
+  concorrencia.py            Despacho assíncrono em threads e filas
 edge_extension/
   manifest.json              Permissões, service worker e content scripts
   background.js              Pedidos, tokens e coordenação de guias
@@ -90,27 +101,29 @@ edge_extension/
   ticket.js                  Observação do formulário e retorno de tickets
   preencher.js               Preenchimento no contexto da página
   movidesk.js                Utilitários de cópia no Movidesk
+  popup.html/.css/.js        Popup da assinatura no WhatsApp Web
+  whatsapp.js                Assinatura injetada no WhatsApp Web
   vendor/                    html2canvas e sua licença
+scripts/
+  NOC.spec                   Especificação PyInstaller
+  gerar_userscripts.py       Geração dos arquivos Tampermonkey
+  verificar_build.py         Verificação offline dentro do executável
+  requirements-build.txt     Dependências de empacotamento
+  constraints-build.txt      Restrições da cadeia legada Gemini
+  LEIA-ME-executavel.txt     Orientações rápidas da distribuição
+  Build Windows.cmd          Atalho para o pipeline de build
+  Abrir configuracoes.cmd    Abertura do .env do executável
 tampermonkey/                Userscripts gerados a partir dos coletores
-tests/                      Testes unitários, gráficos e de navegador
+tests/                       Testes unitários, gráficos e de navegador
 docs/
   arquitetura.md             Referência técnica atual
-  analise-projeto.md          Registro da revisão e reorganização do projeto
-README.md                   Apresentação e contexto
-manual.md                   Manual operacional detalhado
-LEIA-ME-executavel.txt       Orientações rápidas da distribuição
-.env.example                Exemplo e referência das opções de configuração
-requirements.txt            Dependências de execução
-requirements-dev.txt        Dependências de desenvolvimento
-requirements-build.txt      Dependências de empacotamento
-constraints-build.txt       Restrições da cadeia legada Gemini
-pyproject.toml              Configuração do Ruff
-gerar_userscripts.py         Geração dos arquivos Tampermonkey
-verificar_build.py           Verificação offline dentro do executável
-NOC.spec                    Especificação PyInstaller
-build.ps1                   Pipeline Windows de distribuição
-Build Windows.cmd           Atalho para o pipeline
-Abrir configuracoes.cmd     Abertura do .env do executável
+  manual.md                  Manual operacional detalhado
+README.md                    Apresentação e contexto
+.env.example                 Exemplo e referência das opções de configuração
+requirements.txt             Dependências de execução
+requirements-dev.txt         Dependências de desenvolvimento
+pyproject.toml               Configuração do Ruff
+build.ps1                    Pipeline Windows de distribuição
 ```
 
 Diretórios locais como `.venv`, `.venv-build`, `build`, `dist`, `.noc_data` e caches são ignorados pelo Git. `.env` contém a configuração local; `.env.example` é versionado. Perfis de navegador antigos também são ignorados e não são usados pelo fluxo atual da extensão.
@@ -134,6 +147,16 @@ Diretórios locais como `.venv`, `.venv-build`, `build`, `dist`, `.noc_data` e c
 | `clipboard_windows.py` | `copiar_imagem()` | Publicar `CF_DIB` via APIs nativas do Windows. |
 | `recortes_email.py` | `EditorRecortes`, `VisualizadorImagem`, `montar_recortes()` | Seleção visual, ampliação sob demanda e montagem local da evidência. |
 | `tokens_ia.py` | `ConsumoIA` | Última resposta por API, totais reportados e resumo da sessão. |
+| `historico_atendimento.py` | `registrar_evento()`, `agendar_acao()`, `pendente_operacional()` | Linha do tempo local e controle de prazos de acompanhamento. |
+| `agenda_operacional.py` | `criar_rotina()`, `registrar_execucao()`, `em_janela()` | Calendários operacionais, janelas de atendimento e rotinas recorrentes. |
+| `regras_operacionais.py` | `avaliar_regra()`, `validar_perfis()` | Avaliação determinística de perfis privados com prioridades e conflitos. |
+| `recorrencia.py` | `analisar_recorrencia()` | Auditoria determinística de alertas recorrentes na fila local. |
+| `relatorios.py` | `diario_bordo()`, `passagem_turno()`, `indicadores()` | Consolidação local de diário, passagem de turno e métricas. |
+| `exportacao_pdf.py` | `exportar_relatorio_pdf()` | Geração local de PDF paginado com ReportLab. |
+| `base_conhecimento.py` | `buscar_conhecimento()` | Busca textual local em procedimentos Markdown/JSON/TXT selecionados. |
+| `assistente_ia.py` | `organizar_relato()`, `consultar_procedimento()`, `resumir_operacao()` | IA de texto opcional com validação de schema e citação de fontes. |
+| `central_operacional.py` | `CentralOperacional` | Janela dedicada a regras, agenda, conhecimento, relatórios e assistente. |
+| `concorrencia.py` | `disparar_operacao()`, `disparar_assistente()` | Execução assíncrona em threads daemon desacoplada dos widgets Tkinter. |
 
 A interface depende desses serviços. O worker de integração utiliza a ponte e o gerador de HTML; a ponte valida importações com o módulo de incidentes; a persistência restaura a fila pelo mesmo modelo de domínio. O módulo de extração usa o parser local e o OCR e importa os SDKs dos provedores apenas nas funções que os consultam.
 
@@ -216,6 +239,17 @@ Novos eventids ou instâncias geram outros itens. Alerta e servidor não são su
 `PainelFila` mantém linhas por UUID, atualiza apenas valores alterados e destaca/oculta linhas conforme busca, severidade, presença de ticket e etapa. Os filtros têm debounce de **180 ms**. A visão da fila ocupa a área central enquanto expandida; recolhê-la devolve espaço ao editor mesmo no tamanho mínimo de 600 × 520.
 
 Arquivar grava `arquivado` e `arquivado_em`. A remoção mantém até 20 itens na memória para desfazer na sessão. Retornos ainda podem atualizar esses itens removidos; eles só reaparecem por ação do operador. Janelas de pendências capturam o UUID original, evitando aplicar uma resolução ao item que tenha sido selecionado depois.
+
+## Central operacional e acompanhamento
+
+A **Central operacional** (`central_operacional.py`) isola a gestão de turno em uma janela dedicada (`Toplevel`) que opera sobre a mesma `FilaIncidentes` e `fila.operacional`, disparando tarefas de IA via `concorrencia.disparar_assistente()` sem bloquear o loop gráfico:
+
+- **Linha do tempo e follow-up (`historico_atendimento.py`):** cada item mantém `meta.historico` (eventos ordenados com timestamp UTC ISO-8601, tipo, detalhe, autor e fonte) e `meta.acompanhamento` (próxima ação agendada e prazo). `pendente_operacional()` identifica prazos vencidos em atendimentos não arquivados.
+- **Regras operacionais (`regras_operacionais.py`):** carrega perfis privados validados (`versao: 1`), avalia calendários/feriados/janelas de turno, severidade e serviço de forma determinística, detecta conflitos entre regras aplicáveis e calcula prazos de primeiro acionamento e atualização. `NOCFlow.carregar_perfis_operacionais()` faz cache por `(caminho, mtime_ns, tamanho)` para evitar leitura repetida de disco na thread da interface.
+- **Agenda operacional (`agenda_operacional.py`):** mantém rotinas recorrentes (`diaria`, `dias_uteis`, `semanal`, `intervalo_minutos`) com fusos IANA (`zoneinfo`/`tzdata`), calcula o próximo vencimento e registra execuções (`ok`, `alerta`, `falha`) com evidência e operador.
+- **Base de conhecimento (`base_conhecimento.py`):** lê `indice.json` e arquivos Markdown locais, filtrando apenas documentos com `estado == "validado"` compatíveis com o perfil e serviço do atendimento e ranqueando seções por termos da consulta.
+- **Relatórios, recorrência e PDF (`relatorios.py`, `recorrencia.py`, `exportacao_pdf.py`):** gera diário de bordo, passagem de turno, indicadores JSON, exportação CSV (`utf-8-sig`), auditoria determinística de recorrência por host/alerta (com contagem de tickets distintos e lotes) e relatórios paginados em PDF via ReportLab.
+- **Assistente de IA sob demanda (`assistente_ia.py`):** estrutura relatos livres em sugestões revisáveis por checkbox (`organizar_relato()`) e responde consultas sobre procedimentos exigindo citação de fontes `[id]` (`responder_com_fontes()`).
 
 ## Contrato de importação
 
@@ -318,7 +352,7 @@ Exemplo de retorno:
 
 A ponte exige correspondência entre esquema/autoridade da URL retornada e do pedido. Também verifica rota e número em `/Ticket/Edit/{id}`, `/Ticket/Create/{id}` ou query `id` dessas rotas, respeitando eventual caminho base da instância.
 
-`campos` aceita apenas `assunto`, `descricao`, `tipo`, `categoria` e `urgencia`; os valores permitidos são `preenchido`, `pendente` e `nao_localizado`. O relatório fica em `meta.preenchimento`, separado do estado de retorno.
+`campos` aceita `assunto`, `descricao`, `tipo`, `categoria`, `urgencia`, `tempo_apontado`, `atividade`, `solicitante` e `servico`; os valores permitidos são `preenchido`, `pendente` e `nao_localizado`. O relatório fica em `meta.preenchimento`, separado do estado de retorno.
 
 Respostas usam `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` e uma CSP restrita para a página local. O log HTTP padrão está desabilitado para evitar registrar os tokens presentes nas rotas.
 
@@ -375,9 +409,9 @@ O worker inicia operações de forma serial, mas continua processando os retorno
 - Aguarda documento pronto, assunto visível e editor disponível.
 - Interrompe se o assunto já tiver um conteúdo diferente do pedido.
 - Atualiza valores e dispara eventos `input`/`change`.
-- Tenta selecionar tipo/ação interna, categoria e urgência conforme os controles encontrados.
+- Tenta selecionar tipo/ação interna, categoria, urgência, solicitante (pela tag `Movidesk`), serviço (pela tag `Dataside`), tempo apontado (`00:03`, preservando tempo contabilizado) e atividade (`Observability`) conforme os controles encontrados.
 - Suporta seletores nativos, Select2 e Kendo. Consultas Select2 são assíncronas, com timeout de 5 segundos.
-- Preenche Froala, TinyMCE, Kendo, iframe, textarea ou `contenteditable`, conforme o layout disponível.
+- Preenche Froala, TinyMCE, Kendo, iframe, textarea ou `contenteditable`, mantendo o print da evidência logo abaixo do link do Zabbix.
 - Preserva conteúdo e assinatura existentes e identifica o bloco inserido com `data-nocflow-conteudo="1"` para evitar duplicação.
 
 Categoria, urgência e tipo dependem das opções disponíveis na instância. O preenchimento verifica o valor selecionado após os eventos e retorna o resultado por campo. Conteúdo/título recusados pelo editor geram erro; seleções ausentes ou incompletas são apresentadas como pendências. O relatório descreve a tentativa automática anterior à revisão manual no site.
@@ -396,14 +430,16 @@ O nome exibido pela extensão e pelos painéis é **NOCFlow — Zabbix e Movides
 
 | Arquivo | Papel |
 |---|---|
-| `manifest.json` | Manifest V3, permissões `scripting`/`storage`/`alarms`, origens autorizadas e registro dos scripts. |
+| `manifest.json` | Manifest V3, permissões `scripting`/`storage`/`alarms`/`activeTab`, origens autorizadas, popup e registro dos scripts. |
 | `background.js` | Service worker ES module; valida mensagens/remetentes, guarda o estado de sessão, consulta a ponte e coordena as guias. |
 | `bridge.js` | Detecta a página local `/request/{token}` e inicia o vínculo com a extensão. |
-| `coletor.js` | Funções reutilizáveis de coleta, seleção de linhas, busca de detalhes e localização de chamado reconhecido. |
+| `coletor.js` | Funções reutilizáveis de coleta, tags, seleção de linhas, busca de detalhes e localização de chamado reconhecido. |
 | `zabbix.js` | Interface do painel, JSON no clipboard, envio e renderização de evidência. |
 | `ticket.js` | Observa prontidão/alterações do Movidesk e solicita ao service worker o processamento do pedido. |
-| `preencher.js` | Função injetável de automação DOM. |
-| `movidesk.js` | Painel de cópia de número, assunto, link e texto de e-mail, com atualização por observação do DOM. |
+| `preencher.js` | Função injetável de automação DOM no Movidesk. |
+| `movidesk.js` | Painel de cópia de número, assunto, link e template, com atualização por observação do DOM. |
+| `popup.html/.css/.js` | Popup da extensão para configurar o nome do operador e acionar a assinatura no WhatsApp Web. |
+| `whatsapp.js` | Função injetada sob demanda via `activeTab` que assina o rascunho atual no WhatsApp Web sem enviá-lo. |
 
 Origens incluídas: loopback `http://127.0.0.1/*`, `https://*.movidesk.com/*` e as duas instâncias Zabbix listadas no manifesto. As mensagens de runtime exigem remetente da própria extensão, uma guia e, para as operações principais, frame superior. O canal de importação verifica ainda a lista `ZABBIX` e a origem dos links do lote.
 
@@ -411,14 +447,14 @@ Origens incluídas: loopback `http://127.0.0.1/*`, `https://*.movidesk.com/*` e 
 
 ### Fontes compartilhadas
 
-`gerar_userscripts.py` produz:
+`scripts/gerar_userscripts.py` produz:
 
 - `NOCFlow-Zabbix.user.js` = cabeçalho Tampermonkey + `coletor.js` + `zabbix.js`.
 - `NOCFlow-Movidesk.user.js` = cabeçalho Tampermonkey + `movidesk.js`.
 
 Os artefatos são versionados para distribuição, mas a edição deve ocorrer nas fontes. Os scripts usam `@grant none` e execução em `document-idle`. O envio direto fica condicionado ao contexto da extensão.
 
-Na versão **2.1.0**, os painéis destacam **Enviar ao NOCFlow**, **Copiar link + imagem** e **Copiar template**. O Zabbix agrupa cópias auxiliares em **Mais opções**.
+Na versão **2.2.3**, os painéis destacam **Enviar ao NOCFlow**, **Copiar link + imagem** e **Copiar template**. O Zabbix agrupa cópias auxiliares em **Mais opções**.
 
 `html2canvas` 1.4.1 é carregado apenas quando necessário: arquivo empacotado na extensão ou CDN no userscript. Sua licença acompanha `edge_extension/vendor/`.
 
@@ -521,7 +557,7 @@ O arquivo contém o estado atual da fila, não um histórico de auditoria ou ban
 
 `NOME_OPERADOR` pode ser gravado pela própria aba Comunicar. `salvar_nome_operador()` normaliza espaços e usa `dotenv.set_key()` para atualizar somente essa chave no `.env`, preservando as demais opções. A interface substitui sua instância de `Config` com `dataclasses.replace()` e atualiza a prévia imediatamente; a próxima execução lê o valor salvo.
 
-A referência operacional de todas as variáveis e faixas está no [manual](../manual.md#configurar-o-aplicativo-e-a-ia). Os limites principais são:
+A referência operacional de todas as variáveis e faixas está no [manual](manual.md#configurar-o-aplicativo-e-a-ia). Os limites principais são:
 
 - OCR, APIs e formulário: 5–300 segundos.
 - Retorno do ticket: 60–86400 segundos.
@@ -588,10 +624,10 @@ As durações de salvamento incluem a espera pela confirmação na UI; a seriali
 
 | Arquivo | Finalidade |
 |---|---|
-| `requirements.txt` | Pillow, pyperclip, python-dotenv, SDKs Groq/Gemini e projeções WinRT condicionadas ao Windows. |
-| `requirements-dev.txt` | Reutiliza execução e acrescenta Playwright e Ruff. |
-| `requirements-build.txt` | Reutiliza execução, aplica constraints e acrescenta PyInstaller. |
-| `constraints-build.txt` | Fixa a cadeia de compatibilidade do SDK Gemini legado. |
+| `requirements.txt` | Pillow, pyperclip, python-dotenv, tzdata, ReportLab, SDKs Groq/Gemini e projeções WinRT condicionadas ao Windows. |
+| `requirements-dev.txt` | Reutiliza execução e acrescenta Playwright, Ruff e pypdf. |
+| `scripts/requirements-build.txt` | Reutiliza execução, aplica constraints e acrescenta PyInstaller. |
+| `scripts/constraints-build.txt` | Fixa a cadeia de compatibilidade do SDK Gemini legado. |
 
 Tkinter depende da instalação Python/Tcl-Tk. O build é destinado ao Windows e usa `.venv-build` para isolar as dependências do empacotamento.
 
@@ -605,9 +641,9 @@ Etapas:
 
 1. Criar/reutilizar `.venv-build` e instalar os requisitos de build.
 2. Conferir se o executável de destino está aberto.
-3. Regenerar os userscripts.
-4. Executar PyInstaller com `NOC.spec`, usando `build` como diretório de trabalho.
-5. Copiar README, manual, documentação técnica, orientações rápidas, comando de configuração e userscripts para o pacote.
+3. Regenerar os userscripts (`scripts/gerar_userscripts.py`).
+4. Executar PyInstaller com `scripts/NOC.spec`, usando `build` como diretório de trabalho.
+5. Copiar `README.md`, `docs/` (`manual.md` e `arquitetura.md`), `scripts/LEIA-ME-executavel.txt`, `scripts/Abrir configuracoes.cmd` e `tampermonkey/` para o pacote.
 6. Executar `NOCFlow.exe --verificar-build <relatorio>` e exigir sucesso em até 90 segundos.
 7. Preparar os dados locais do usuário do build: copiar configuração/rascunho existentes apenas quando ainda não houver destino.
 8. Criar o atalho na Área de Trabalho, salvo quando `-SemAtalho` estiver definido.
@@ -618,7 +654,7 @@ Saída padrão: `dist/NOCFlow/NOCFlow.exe`. Para outra pasta:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -SemAtalho -PastaSaida dist\homologacao
 ```
 
-`NOC.spec` usa o formato **onedir**, sem console. Inclui `.env.example`, a extensão, metadados dos SDKs e bibliotecas WinRT. O código de entrada importa os módulos do pacote `noc`; dependências dinâmicas relevantes também são coletadas pelos hooks. Playwright é explicitamente excluído.
+`scripts/NOC.spec` usa o formato **onedir**, sem console. Inclui `.env.example`, a extensão, dados `tzdata`, metadados dos SDKs e bibliotecas WinRT. O código de entrada importa os módulos do pacote `noc`; dependências dinâmicas relevantes também são coletadas pelos hooks. Playwright é explicitamente excluído.
 
 Distribua a pasta `NOCFlow` inteira com `_internal`. Dados de uso ficam no diretório externo do usuário e não integram o pacote. Os documentos e os userscripts são arquivos adicionais da distribuição.
 
@@ -654,18 +690,22 @@ Os testes de interface precisam de sessão gráfica. O OCR nativo exige Windows 
 | `test_noc.py` | Interface responsiva, importação durante edição, revisão protegida, ticket contextual, modelos/cópias, filtros, arquivamento, desfazer remoção, recortes após reinício e encerramento. |
 | `test_recortes_email.py` | Coordenadas, zoom, seleção, montagem e cópia dos recortes. |
 | `test_tokens_ia.py` | Tetos, consumo reportado e configuração. |
+| `test_extensao_config.py` | Preservação de domínios Zabbix customizados ao atualizar a extensão. |
+| `test_extensao_operador.py` | Seleção de tipo interno, apontamento de horas, tags de solicitante/serviço e assinatura no WhatsApp Web. |
+| `test_operacao.py` | Regras operacionais, agenda, histórico, relatórios, PDF, base de conhecimento e Central operacional. |
+| `test_recorrencia.py` | Agrupamento e contagem determinística de recorrência na fila. |
 
 `pyproject.toml` habilita no Ruff as regras `E9` e `F`, voltadas a erros sintáticos e problemas como nomes indefinidos/imports sem uso. A formatação completa do projeto não é imposta por essa configuração.
 
 ### Verificação do executável
 
-`verificar_build.py` roda dentro do próprio binário e usa diretórios temporários. Confere importação dos SDKs sem chamadas pagas, OCR nativo, parser, fila, recortes, recursos da extensão, ciclo da interface, ponte HTTP autenticada e localização do Microsoft Edge.
+`scripts/verificar_build.py` roda dentro do próprio binário e usa diretórios temporários. Confere importação dos SDKs sem chamadas pagas, OCR nativo, parser, fila, recortes, perfis/fusos, exportação PDF de recorrência, recursos da extensão, ciclo da interface e da Central operacional, ponte HTTP autenticada e localização do Microsoft Edge.
 
 O relatório JSON é gravado em `build/verificacao.json`, com status e detalhes de erro quando houver. Essa verificação identifica a instalação do Edge; o exercício real da extensão em navegador está nas fixtures Playwright.
 
 ### Homologação operacional
 
-Após mudanças de layout ou integração, exercite no ambiente de uso: um evento de cada Zabbix, uma seleção em lote, uma imagem, um ticket salvo e o retorno ao incidente de origem. Confira categoria, urgência, assinatura e comunicados com os dados revisados. O roteiro do operador está no [manual](../manual.md#atendimento-de-ponta-a-ponta).
+Após mudanças de layout ou integração, exercite no ambiente de uso: um evento de cada Zabbix, uma seleção em lote, uma imagem, um ticket salvo e o retorno ao incidente de origem. Confira categoria, urgência, assinatura e comunicados com os dados revisados. O roteiro do operador está no [manual](manual.md#atendimento-de-ponta-a-ponta).
 
 ## Adaptação e manutenção
 
@@ -676,11 +716,11 @@ Para outra instância Zabbix, ajuste conjuntamente:
 1. `host_permissions` no manifesto.
 2. `matches` dos content scripts `coletor.js`/`zabbix.js`.
 3. Lista `ZABBIX` em `background.js`.
-4. Matches Zabbix em `gerar_userscripts.py`, se distribuir Tampermonkey.
+4. Matches Zabbix em `scripts/gerar_userscripts.py`, se distribuir Tampermonkey.
 
 Para um domínio Movidesk personalizado, ajuste `MOVIDESK_URL`, permissões, matches de `ticket.js`/`movidesk.js` e matches do userscript quando aplicável. Os seletores ainda precisam corresponder ao HTML da instância.
 
-Após editar fontes compartilhadas, execute `python gerar_userscripts.py`, valide as fixtures e gere a distribuição. Recarregue a extensão e as páginas. A porta da ponte também é compartilhada entre `noc/edge_bridge.py`, `background.js` e `bridge.js`; mudanças precisam ser coordenadas.
+Após editar fontes compartilhadas, execute `python scripts/gerar_userscripts.py`, valide as fixtures e gere a distribuição. Recarregue a extensão e as páginas. A porta da ponte também é compartilhada entre `noc/edge_bridge.py`, `background.js` e `bridge.js`; mudanças precisam ser coordenadas.
 
 ### Evoluir contratos e recursos
 
@@ -689,7 +729,7 @@ Após editar fontes compartilhadas, execute `python gerar_userscripts.py`, valid
 - Novos arquivos da extensão precisam constar nos pontos de carregamento e em `ARQUIVOS_EXTENSAO`, que controla a cópia para o diretório do usuário.
 - Alterações nos coletores devem ser feitas em `edge_extension/`, seguidas de regeneração dos artefatos Tampermonkey.
 - Os defaults de configuração estão em `Config`/`carregar_config()` e `.env.example`; a adição automática ao arquivo local usa o exemplo distribuído.
-- Mudanças na documentação distribuída devem atualizar as cópias previstas em `build.ps1` e as referências de `LEIA-ME-executavel.txt`.
+- Mudanças na documentação distribuída devem atualizar as cópias previstas em `build.ps1` e as referências de `scripts/LEIA-ME-executavel.txt`.
 
 ### Pontos de evolução conhecidos
 
@@ -697,5 +737,3 @@ Após editar fontes compartilhadas, execute `python gerar_userscripts.py`, valid
 - As constraints fixam a cadeia Gemini, mas o ambiente completo de release ainda aceita faixas nas demais dependências.
 - A interface concentra construção visual e despacho de eventos, enquanto persistência e serviços já estão isolados. A separação futura das abas pode ocorrer sem alterar seus contratos.
 - A fila representa o estado operacional local. Tokens, caches de extração, remoções desfeitas e painel de cotas são de sessão; recortes, modelos e estado do atendimento são persistidos.
-
-O [registro da análise e reorganização](analise-projeto.md) documenta o diagnóstico, as correções e as medições daquela revisão. Este arquivo é a referência da arquitetura atual.
