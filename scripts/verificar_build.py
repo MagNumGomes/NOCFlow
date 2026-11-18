@@ -38,12 +38,14 @@ def verificar(relatorio):
         from noc.ocr_windows import extrair_texto
         from noc.recortes_email import montar_recortes
         from noc.regras_operacionais import validar_perfis
+        from noc.versao import __version__
 
         cliente = generativelanguage.GenerativeServiceClient(
             credentials=AnonymousCredentials(),
             client_options={"api_endpoint": "localhost:1"},
         )
         cliente.transport.close()
+        resultado["versao"] = __version__
         resultado["gemini_sdk"] = genai.__version__
         with Groq(api_key="verificacao-offline", max_retries=0):
             resultado["groq_sdk"] = "ok"

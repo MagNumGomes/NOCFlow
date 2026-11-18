@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NOCFlow - Zabbix - Local
 // @namespace    nocflow
-// @version      2.2.3
+// @version      2.3.0
 // @description  Coleta local de eventos, seleção em lote e imagens sob demanda
 // @match        https://zabbix.example.com/*
 // @match        https://zabbix-secondary.example.com/*

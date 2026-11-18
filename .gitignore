@@ -16,6 +16,7 @@ __pycache__/
 .coverage.*
 htmlcov/
 coverage.xml
+auditoria-dependencias.json
 *.py[cod]
 *$py.class
 *.so

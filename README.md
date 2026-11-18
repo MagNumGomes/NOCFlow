@@ -8,6 +8,7 @@ Aplicativo desktop para Windows criado para apoiar equipes de **NOC (Network Ope
 
 - 📘 **[Manual de Uso Completo](docs/manual.md)** — Guia passo a passo de todas as telas, atalhos, extensão do navegador, Central Operacional, relatórios e solução de problemas.
 - 🏗️ **[Arquitetura Técnica](docs/arquitetura.md)** — Estrutura dos módulos, contratos de dados, concorrência, segurança da ponte local, persistência e ciclo de manutenção.
+- 📦 **[Dependências e releases](docs/releases.md)** — CI Windows, auditoria de vulnerabilidades, Dependabot, versão única e publicação por tags.
 
 ---
 
@@ -47,7 +48,7 @@ Aplicativo desktop para Windows criado para apoiar equipes de **NOC (Network Ope
 ## 🛠️ Tecnologias Utilizadas
 
 - **Aplicativo Desktop e Interface:**
-  - **Python 3.10+** — linguagem principal da aplicação e das regras de negócio.
+  - **Python 3.12** — versão homologada para desenvolvimento e build (dependências exigem no mínimo 3.11).
   - **Tkinter / TTK** — interface gráfica nativa para Windows, leve e responsiva, com execução assíncrona desacoplada por filas e workers.
 - **OCR, Imagens e Área de Transferência:**
   - **WinRT (`Windows.Media.Ocr`)** — reconhecimento óptico de caracteres nativo do Windows 10/11 (offline).
@@ -86,7 +87,7 @@ Escolha **apenas uma** das duas opções abaixo conforme o que você tem em mão
 
 #### Opção B — Você baixou o projeto pelo GitHub (Código-Fonte)
 1. **Instale o Python (se ainda não tiver):**
-   - Baixe o **Python 3.10 ou superior** em [python.org/downloads](https://www.python.org/downloads/).
+    - Baixe o **Python 3.12 x64**, usado na homologação, em [python.org/downloads](https://www.python.org/downloads/).
    - ⚠️ Na primeira tela do instalador, **marque a caixinha `"Add python.exe to PATH"`** na parte inferior antes de clicar em *Install Now*.
 2. **Baixe o projeto do GitHub ([github.com/MagNumGomes/NOCFlow](https://github.com/MagNumGomes/NOCFlow)):**
    - **Pelo Terminal com `git clone`:** abra o PowerShell na pasta onde deseja salvar (por exemplo, na Área de Trabalho) e execute:

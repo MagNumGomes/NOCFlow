@@ -17,8 +17,12 @@ if (-not (Test-Path $pythonBuild)) {
     Confirmar-Sucesso "criar ambiente Python"
 }
 
-& $pythonBuild -m pip install -r (Join-Path $raiz "scripts\requirements-build.txt")
+& $pythonBuild -m pip install -r (Join-Path $raiz "scripts\requirements-windows.txt") -r (Join-Path $raiz "scripts\requirements-build.txt")
 Confirmar-Sucesso "instalar dependencias de build"
+& $pythonBuild -m pip check
+Confirmar-Sucesso "validar dependencias instaladas"
+& $pythonBuild (Join-Path $raiz "scripts\versionar.py") --check
+Confirmar-Sucesso "validar versao e artefatos gerados"
 
 Write-Host "Gerando executavel Windows com a extensao do Edge..."
 $destino = Join-Path $pastaDist "NOCFlow"
@@ -33,6 +37,8 @@ Confirmar-Sucesso "empacotar aplicativo"
 Copy-Item (Join-Path $raiz "scripts\LEIA-ME-executavel.txt") $destino
 Copy-Item (Join-Path $raiz "scripts\Abrir configuracoes.cmd") $destino
 Copy-Item (Join-Path $raiz "README.md") $destino
+Copy-Item (Join-Path $raiz "CHANGELOG.md") $destino
+Copy-Item (Join-Path $raiz "VERSION") $destino
 Copy-Item (Join-Path $raiz "docs") $destino -Recurse -Force
 Copy-Item (Join-Path $raiz "tampermonkey") $destino -Recurse -Force
 

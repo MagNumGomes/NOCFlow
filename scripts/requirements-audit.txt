@@ -1,0 +1,2 @@
+# Ferramenta isolada; não integra o aplicativo nem seu snapshot de build.
+pip-audit==2.10.1

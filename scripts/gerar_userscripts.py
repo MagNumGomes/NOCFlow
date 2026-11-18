@@ -1,13 +1,12 @@
 """Gera os userscripts a partir dos mesmos coletores usados na extensão."""
 
-import json
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1]
 
 
 def artefatos():
-    versao = json.loads((RAIZ / "edge_extension/manifest.json").read_text(encoding="utf-8"))["version"]
+    versao = (RAIZ / "VERSION").read_text(encoding="utf-8").strip()
     for nome, descricao, matches, arquivos in (
         ("Zabbix", "Coleta local de eventos, seleção em lote e imagens sob demanda", ["https://zabbix.example.com/*", "https://zabbix-secondary.example.com/*"], ["coletor.js", "zabbix.js"]),
         ("Movidesk", "Copia número, assunto, link e template sem polling periódico", ["https://*.movidesk.com/*"], ["movidesk.js"]),
