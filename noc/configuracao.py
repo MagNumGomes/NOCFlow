@@ -1,20 +1,20 @@
 """Configuração, localização de recursos e diretórios de dados do NOCFlow."""
 
-from dataclasses import dataclass
 import logging
 import os
-from pathlib import Path
 import sys
+from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
 
 LOGGER = logging.getLogger("noc")
 
 
-def diretorio_recursos():
+def diretorio_recursos() -> Path:
     return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
 
 
-def diretorio_aplicacao():
+def diretorio_aplicacao() -> Path:
     """Dados do executável ficam fora do pacote, sobrevivendo a novos builds."""
     if not getattr(sys, "frozen", False):
         return diretorio_recursos()
@@ -51,7 +51,7 @@ class Config:
     nome_operador: str = ""
 
     @property
-    def dados_dir(self):
+    def dados_dir(self) -> Path:
         return self.diretorio / ".noc_data"
 
 
@@ -90,7 +90,7 @@ def salvar_nome_operador(diretorio, nome):
     return nome
 
 
-def carregar_config(diretorio):
+def carregar_config(diretorio: Path) -> Config:
     from dotenv import load_dotenv
 
     try:
@@ -131,7 +131,7 @@ def carregar_config(diretorio):
     )
 
 
-def url_valida(valor):
+def url_valida(valor: object) -> bool:
     if not isinstance(valor, str) or any(c.isspace() or ord(c) < 32 for c in valor):
         return False
     try:

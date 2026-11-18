@@ -1,5 +1,11 @@
 /* Coletor compartilhado pela extensão, userscript e fixtures de navegador. */
 (() => {
+  const seletores = Object.freeze({
+    linhas: "tr", tabelas: "table", links: "a[href]", tags: ".tag",
+    nomeTag: ".tag-name", valorTag: ".tag-value",
+    selecionados: 'tbody input[type="checkbox"]:checked',
+    caixas: 'tbody input[type="checkbox"]'
+  });
   const campos = ["alerta", "servidor", "severidade", "situacao", "horario"];
   const normalizar = texto => (texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ").trim().replace(/:$/, "").toLowerCase();
@@ -26,7 +32,7 @@
     } catch { return null; }
   }
   function linhasRotuladas(doc) {
-    return Array.from(doc.querySelectorAll("tr")).flatMap(linha => {
+    return Array.from(doc.querySelectorAll(seletores.linhas)).flatMap(linha => {
       const celulas = Array.from(linha.cells);
       if (celulas.length !== 2) return [];
       const campo = rotulos[normalizar(texto(celulas[0]))];
@@ -44,7 +50,7 @@
     }
     // Alguns layouts mostram Time como cabeçalho na tabela de eventos.
     if (!dados.horario) {
-      const candidatos = Array.from(doc.querySelectorAll("tr")).filter(l =>
+      const candidatos = Array.from(doc.querySelectorAll(seletores.linhas)).filter(l =>
         Array.from(l.querySelectorAll("a[href]")).some(a => urlEvento(a.getAttribute("href"), href)?.searchParams.get("eventid") === url.searchParams.get("eventid")));
       const horas = [...new Set(candidatos.flatMap(l => {
         const cabecalho = l.closest("table")?.querySelector("thead tr");
@@ -54,12 +60,12 @@
       if (horas.length === 1) dados.horario = horas[0];
     }
     const tags = [];
-    for (const tr of doc.querySelectorAll("tr")) {
+    for (const tr of doc.querySelectorAll(seletores.linhas)) {
       if (tr.cells.length !== 2 || normalizar(texto(tr.cells[0])) !== "tags") continue;
-      const blocos = Array.from(tr.cells[1].querySelectorAll(".tag"));
+      const blocos = Array.from(tr.cells[1].querySelectorAll(seletores.tags));
       const valores = blocos.length ? blocos.map(bloco => {
-        const nome = texto(bloco.querySelector(".tag-name")).trim();
-        const valor = texto(bloco.querySelector(".tag-value")).trim();
+        const nome = texto(bloco.querySelector(seletores.nomeTag)).trim();
+        const valor = texto(bloco.querySelector(seletores.valorTag)).trim();
         if (nome || valor) return `${nome}: ${valor}`.replace(/^:\s*/, "").replace(/:\s*$/, "").trim();
         return texto(bloco).trim();
       }) : texto(tr.cells[1]).split("\n").map(valor => valor.trim()).filter(Boolean);
@@ -131,7 +137,7 @@
   }
   function selecionados(doc, href) {
     const eventos = new Map();
-    for (const checkbox of doc.querySelectorAll('tbody input[type="checkbox"]:checked')) {
+    for (const checkbox of doc.querySelectorAll(seletores.selecionados)) {
       const linha = checkbox.closest("tr");
       const url = Array.from(linha?.querySelectorAll("a[href]") || []).map(a => urlEvento(a.getAttribute("href"), href)).find(Boolean);
       if (!url) continue;
@@ -170,14 +176,14 @@
   }
   function selecionar(doc, href, quantidade) {
     if (!Number.isInteger(quantidade) || quantidade < 1 || quantidade > 100) throw new Error("Informe um número inteiro de 1 a 100.");
-    const caixas = Array.from(doc.querySelectorAll('tbody input[type="checkbox"]')).filter(c =>
+    const caixas = Array.from(doc.querySelectorAll(seletores.caixas)).filter(c =>
       !c.disabled && Array.from(c.closest("tr")?.querySelectorAll("a[href]") || []).some(a => urlEvento(a.getAttribute("href"), href)));
     for (const caixa of caixas.slice(0, quantidade)) if (!caixa.checked) caixa.click();
     return Math.min(quantidade, caixas.length);
   }
   function numeroChamado(doc) {
     // Procura somente no histórico de reconhecimentos, nunca em todos os números da página.
-    const tabelas = Array.from(doc.querySelectorAll("table")).filter(t => {
+    const tabelas = Array.from(doc.querySelectorAll(seletores.tabelas)).filter(t => {
       const cabecalho = normalizar(texto(t.querySelector("thead")));
       const contexto = texto(t.previousElementSibling) + " " + texto(t.closest("section, fieldset")?.querySelector("h2, h3, legend"));
       return /acknowledg|reconhec/i.test(cabecalho + " " + t.id + " " + contexto) ||

@@ -4,8 +4,10 @@ import io
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+from .infra.persistencia import escrever_bytes
 
-def exportar_pdf(caminho, texto):
+
+def exportar_pdf(caminho: str | Path, texto: str) -> None:
     if not texto.strip():
         raise ValueError("Gere um relatório antes de exportar.")
     from reportlab.lib import colors
@@ -36,4 +38,4 @@ def exportar_pdf(caminho, texto):
         canvas.restoreState()
 
     documento.build(elementos, onFirstPage=rodape, onLaterPages=rodape)
-    Path(caminho).write_bytes(buffer.getvalue())
+    escrever_bytes(Path(caminho), buffer.getvalue())

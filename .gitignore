@@ -26,7 +26,7 @@ coverage.xml
 *.env
 !.env.example
 
-# Perfil do navegador e dados de sessão (Playwright)
+# Perfis privados legados (preservados) e artefatos dos testes Playwright
 movidesk_profile/
 movidesk_edge_profile/
 .playwright/
@@ -45,6 +45,7 @@ config/private/
 knowledge/private/
 *.bak
 *.log
+*.jsonl
 *.tmp
 *.temp
 

@@ -1,11 +1,11 @@
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 import importlib.util
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from pathlib import Path
 from unittest.mock import patch
 
 from google.api_core import exceptions
@@ -14,7 +14,6 @@ from PIL import Image, ImageDraw, ImageFont
 from noc.configuracao import Config, preparar_config_apis
 from noc.extracao import consultar_groq, extrair_dados
 from noc.ocr_windows import extrair_texto
-
 
 DADOS = {"alerta": "CPU usage high", "servidor": "servidor-01", "severidade": "High", "situacao": "CPU 95%", "horario": "10:42"}
 TEXTO_OCR = "Trigger: CPU usage high\nHost: servidor-01\nSeverity: High\nOperational data: CPU 95%\nTime: 10:42"
@@ -209,6 +208,5 @@ class OCRWindowsTests(unittest.TestCase):
         self.assertIn("10:42", texto)
 
     def test_print_vazio_retorna_erro_local(self):
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            with self.assertRaisesRegex(ValueError, "texto legível"):
-                pool.submit(extrair_texto, Image.new("RGB", (200, 100), "white")).result(timeout=25)
+        with ThreadPoolExecutor(max_workers=1) as pool, self.assertRaisesRegex(ValueError, "texto legível"):
+            pool.submit(extrair_texto, Image.new("RGB", (200, 100), "white")).result(timeout=25)

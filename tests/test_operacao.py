@@ -1,28 +1,45 @@
-from copy import deepcopy
 import json
-from pathlib import Path
 import queue
 import tempfile
 import threading
 import time
 import tkinter as tk
-from tkinter import ttk
 import unittest
+from copy import deepcopy
+from pathlib import Path
+from tkinter import ttk
 from unittest.mock import patch
 
 from PIL import Image
 
-from noc.agenda_operacional import criar_rotina, em_janela, proximo_horario, registrar_execucao, validar_agenda
+from noc.agenda_operacional import (
+    criar_rotina,
+    em_janela,
+    proximo_horario,
+    registrar_execucao,
+    validar_agenda,
+)
 from noc.assistente_ia import organizar_relato, responder_com_fontes
 from noc.base_conhecimento import buscar, carregar_base
 from noc.central_operacional import PERFIL_EXEMPLO
 from noc.comunicados import gerar_html, validar_dados
 from noc.configuracao import Config
-from noc.historico_atendimento import agendar_acao, concluir_acompanhamento, instante, pendente_operacional, registrar_evento
+from noc.historico_atendimento import (
+    agendar_acao,
+    concluir_acompanhamento,
+    instante,
+    pendente_operacional,
+    registrar_evento,
+)
 from noc.incidentes import FilaIncidentes
 from noc.interface import NOCFlow
 from noc.rascunhos import RascunhoWorker
-from noc.regras_operacionais import aplicar_regra, avaliar_regras, prazos_atendimento, validar_perfis
+from noc.regras_operacionais import (
+    aplicar_regra,
+    avaliar_regras,
+    prazos_atendimento,
+    validar_perfis,
+)
 from noc.relatorios import diario_bordo, exportar_csv, indicadores, passagem_turno
 
 AGORA = "2030-01-07T12:00:00+00:00"
@@ -208,9 +225,8 @@ class ConhecimentoIATests(unittest.TestCase):
         self.assertEqual(json.loads(conteudo["messages"][1]["content"]), {"relato": "VPN não conecta"})
         def indisponivel(request):
             return httpx.Response(429, json={"error": {"message": "CONTEUDO_PRIVADO"}})
-        with patch("groq.Groq", side_effect=lambda **kw: Groq(**kw, http_client=httpx.Client(transport=httpx.MockTransport(indisponivel)))):
-            with self.assertRaisesRegex(ValueError, "HTTP 429") as exc:
-                organizar_relato(config, "VPN não conecta")
+        with patch("groq.Groq", side_effect=lambda **kw: Groq(**kw, http_client=httpx.Client(transport=httpx.MockTransport(indisponivel)))), self.assertRaisesRegex(ValueError, "HTTP 429") as exc:
+            organizar_relato(config, "VPN não conecta")
         self.assertNotIn("CONTEUDO_PRIVADO", str(exc.exception))
 
     def test_busca_respeita_perfil_servico_estado_vigencia_e_limites_de_pasta(self):
@@ -315,6 +331,7 @@ class CentralInterfaceTests(unittest.TestCase):
         self.assertTrue(self.app.validar("Movidesk"))
         with patch("noc.interface.pyperclip.copy"):
             self.app.copiar_comunicado("Teams")
+            self.aguardar(lambda: not self.app.tarefas.callbacks)
         self.assertTrue(pendente_operacional(self.app.fila.obter()))
         self.central.registrar_acao()
         self.preencher_dialogo("Registrar ação · envio informado manualmente", {"texto": "Comunicado enviado", "destino": "Equipe de exemplo", "canal": "Teams"})
@@ -384,7 +401,31 @@ class CentralInterfaceTests(unittest.TestCase):
         destino = Path(self.pasta.name) / "auditoria.pdf"
         with patch("noc.central_operacional.filedialog.asksaveasfilename", return_value=str(destino)):
             self.central.exportar_relatorio_pdf()
+            self.aguardar(lambda: not self.central.tarefas.callbacks)
         self.assertIn("Falha de VPN", PdfReader(destino).pages[0].extract_text())
+
+    def test_pdf_lento_nao_bloqueia_ui_e_fecha_apos_concluir(self):
+        iniciou, liberar = threading.Event(), threading.Event()
+        heartbeat = []
+        threads = []
+        self.central.gerar_passagem()
+        def exportar(*_):
+            threads.append(threading.get_ident())
+            iniciou.set()
+            if not liberar.wait(5):
+                raise TimeoutError("Worker não liberado")
+        try:
+            with patch("noc.central_operacional.filedialog.asksaveasfilename", return_value=str(Path(self.pasta.name) / "teste.pdf")), patch("noc.central_operacional.exportar_pdf", side_effect=exportar):
+                self.central.exportar_relatorio_pdf()
+                self.root.after(10, lambda: heartbeat.append(True))
+                self.aguardar(lambda: iniciou.is_set() and bool(heartbeat))
+                self.assertNotEqual(threads[0], threading.get_ident())
+                self.central.fechar()
+                self.assertFalse(self.central.fechada)
+                liberar.set()
+                self.aguardar(lambda: self.central.fechada)
+        finally:
+            liberar.set()
 
 
 if __name__ == "__main__":

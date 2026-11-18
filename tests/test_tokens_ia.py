@@ -1,8 +1,8 @@
 import os
-from pathlib import Path
 import tempfile
-from types import SimpleNamespace
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from PIL import Image
@@ -14,8 +14,8 @@ from noc.tokens_ia import ConsumoIA
 
 class TokensTests(unittest.TestCase):
     def test_gemini_envia_teto_e_informa_consumo_mesmo_quando_truncado(self):
-        from google.generativeai.types import GenerateContentResponse
         from google.generativeai import protos
+        from google.generativeai.types import GenerateContentResponse
 
         for motivo in (1, 2):
             with self.subTest(motivo=motivo):

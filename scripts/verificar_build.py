@@ -2,35 +2,41 @@
 
 import json
 import os
-from pathlib import Path
 import sys
 import tempfile
 import time
 import traceback
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 
 def verificar(relatorio):
     resultado = {"executavel": sys.executable, "empacotado": bool(getattr(sys, "frozen", False))}
     try:
+        import tkinter as tk
+
         import google.generativeai as genai
         from google.ai import generativelanguage
         from google.auth.credentials import AnonymousCredentials
-        from PIL import Image, ImageDraw, ImageFont
         from groq import Groq
-        from noc.ocr_windows import extrair_texto
-        import tkinter as tk
+        from PIL import Image, ImageDraw, ImageFont
 
-        from noc.interface import NOCFlow
-        from noc.configuracao import Config
-        from noc.comunicados import gerar_assunto_email
-        from noc.recortes_email import montar_recortes
-        from noc.edge_bridge import ARQUIVOS_EXTENSAO, EdgeBridge, preparar_extensao, caminho_edge
-        from noc.extracao_local import interpretar_ocr
-        from noc.incidentes import importar_eventos, FilaIncidentes
         from noc.agenda_operacional import criar_rotina, fuso
         from noc.central_operacional import PERFIL_EXEMPLO
+        from noc.comunicados import gerar_assunto_email
+        from noc.configuracao import Config
+        from noc.edge_bridge import (
+            ARQUIVOS_EXTENSAO,
+            EdgeBridge,
+            caminho_edge,
+            preparar_extensao,
+        )
+        from noc.extracao_local import interpretar_ocr
         from noc.historico_atendimento import agendar_acao, registrar_evento
+        from noc.incidentes import FilaIncidentes, importar_eventos
+        from noc.interface import NOCFlow
+        from noc.ocr_windows import extrair_texto
+        from noc.recortes_email import montar_recortes
         from noc.regras_operacionais import validar_perfis
 
         cliente = generativelanguage.GenerativeServiceClient(
@@ -138,3 +144,21 @@ def verificar(relatorio):
     relatorio.parent.mkdir(parents=True, exist_ok=True)
     relatorio.write_text(json.dumps(resultado, ensure_ascii=False, indent=2), encoding="utf-8")
     return codigo
+
+
+def main():
+    """Executa também por fonte, com o mesmo contrato do executável."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--relatorio", type=Path, default=Path("build/verificacao-fonte.json"))
+    args = parser.parse_args()
+    if not getattr(sys, "frozen", False):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    codigo = verificar(args.relatorio)
+    print(args.relatorio.read_text(encoding="utf-8"))
+    return codigo
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

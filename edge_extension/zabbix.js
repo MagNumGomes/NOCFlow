@@ -142,6 +142,13 @@
     const avisos = dados.eventos.filter(e => e.aviso).length;
     return `${dados.eventos.length} evento(s) enviado(s) à fila do NOCFlow.${avisos ? ` ${avisos} com pendências de coleta; confira no aplicativo.` : ""}`;
   }, true);
+  botao("Copiar dados para NOCFlow", async () => {
+    const dados = await payload(false);
+    const texto = JSON.stringify(dados);
+    if (new TextEncoder().encode(texto).length > 2000000) throw new Error("Lote excede 2 MB. Selecione menos eventos.");
+    await navigator.clipboard.writeText(texto);
+    return `${dados.eventos.length} evento(s) copiado(s). Use Ctrl+I no NOCFlow.`;
+  }, !extensao);
   if (lista) {
     botao("Selecionar primeiras N linhas", async () => {
       const valor = prompt("Quantas linhas selecionar? (1–100)", "4");

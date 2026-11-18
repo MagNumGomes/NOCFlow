@@ -1,19 +1,17 @@
 """Importação versionada e fila de eventos, sem rede e sem IA."""
 
-import base64
-from copy import deepcopy
-import io
 import json
 import math
 import uuid
+from copy import deepcopy
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
-from PIL import Image
-
-from .configuracao import url_valida
-from .atendimento import agora
-from .historico_atendimento import registrar_evento, validar_historico
 from .agenda_operacional import validar_agenda
+from .atendimento import agora
+from .configuracao import url_valida
+from .domain.contratos import SnapshotFila
+from .historico_atendimento import registrar_evento, validar_historico
+from .infra.imagens import MAX_PIXELS, decodificar_imagem
 
 CAMPOS_EVENTO = ("alerta", "servidor", "severidade", "situacao", "horario")
 CAMPOS_FORMULARIO = CAMPOS_EVENTO + ("link_zabbix", "ticket", "acionamento", "time_resp",
@@ -34,7 +32,7 @@ def identidade_evento(link):
     return instancia, evento
 
 
-def importar_eventos(conteudo):
+def importar_eventos(conteudo: str | dict) -> list[dict]:
     if isinstance(conteudo, str):
         if len(conteudo.encode("utf-8")) > MAX_IMPORTACAO:
             raise ValueError("Importação muito grande; limite de 2 MB.")
@@ -48,6 +46,7 @@ def importar_eventos(conteudo):
     if not isinstance(eventos, list) or not 1 <= len(eventos) <= MAX_EVENTOS:
         raise ValueError(f"Importe entre 1 e {MAX_EVENTOS} eventos por vez.")
     resultado = []
+    pixels_restantes = MAX_PIXELS
     for evento in eventos:
         if not isinstance(evento, dict):
             raise ValueError("Evento inválido na importação.")
@@ -65,12 +64,8 @@ def importar_eventos(conteudo):
         if not isinstance(imagem_b64, str) or len(imagem_b64) > MAX_IMPORTACAO:
             raise ValueError("Campo inválido ou muito extenso: imagem_base64.")
         if imagem_b64:
-            bruto = imagem_b64.split(",", 1)[-1].strip() if imagem_b64.startswith("data:image/") else imagem_b64.strip()
-            try:
-                with Image.open(io.BytesIO(base64.b64decode(bruto, validate=True))) as img:
-                    imagem = img.convert("RGB")
-            except Exception:
-                raise ValueError("Imagem inválida na importação.") from None
+            imagem = decodificar_imagem(imagem_b64, limite=pixels_restantes)
+            pixels_restantes -= imagem.width * imagem.height
         item_importado = {"dados": dados, "meta": {"origem": "DOM", "instancia": instancia, "eventid": eventid}}
         aviso = evento.get("aviso", "")
         if not isinstance(aviso, str) or len(aviso) > 1200:
@@ -134,7 +129,7 @@ class FilaIncidentes:
             ids.append(item["id"])
         return list(dict.fromkeys(ids))
 
-    def snapshot(self):
+    def snapshot(self) -> SnapshotFila:
         return {"ativo": self.ativo, "itens": [{**i, "dados": dict(i["dados"]), "meta": deepcopy(i["meta"])} for i in self.itens],
                 "operacional": deepcopy(self.operacional)}
 

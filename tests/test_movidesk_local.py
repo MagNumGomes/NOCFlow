@@ -1,21 +1,20 @@
 """Integração real da extensão com cookies preexistentes e servidor local."""
 
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
-from pathlib import Path
 import queue
 import shutil
 import tempfile
 import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
+from noc.configuracao import Config
 from noc.edge_bridge import EdgeBridge
 from noc.incidentes import CAMPOS_FORMULARIO as CAMPOS
-from noc.configuracao import Config
 from noc.movidesk import MovideskWorker
-
 
 FORMULARIO = b"""<html><body><input id="TicketSubject">
 <input type="radio" name="TicketType" id="publico" checked><label for="publico">Publico</label>

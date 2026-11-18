@@ -32,12 +32,16 @@ def extrair_texto(imagem, timeout=15):
     if os.name != "nt":
         raise ValueError("O OCR local está disponível no Windows 10/11.")
     try:
-        from winrt.windows.globalization import Language
-        from winrt.windows.graphics.imaging import BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap
-        from winrt.windows.media.ocr import OcrEngine
-        from winrt.windows.storage.streams import DataWriter
         # Projeções de coleções são necessárias para percorrer OcrResult.lines.
         import winrt.windows.foundation.collections  # noqa: F401
+        from winrt.windows.globalization import Language
+        from winrt.windows.graphics.imaging import (
+            BitmapAlphaMode,
+            BitmapPixelFormat,
+            SoftwareBitmap,
+        )
+        from winrt.windows.media.ocr import OcrEngine
+        from winrt.windows.storage.streams import DataWriter
     except ImportError:
         raise ValueError("O OCR do Windows não está incluído nesta instalação. Atualize o executável ou instale requirements.txt.") from None
 

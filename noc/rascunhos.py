@@ -4,15 +4,14 @@ import base64
 import io
 import json
 import logging
-import os
 import queue
 import shutil
 import threading
 import time
 
-from PIL import Image
-
-from .incidentes import FilaIncidentes, CAMPOS_FORMULARIO
+from .incidentes import CAMPOS_FORMULARIO, FilaIncidentes
+from .infra.imagens import decodificar_imagem
+from .infra.persistencia import arquivo_atomico
 
 LOGGER = logging.getLogger("noc")
 
@@ -41,8 +40,7 @@ class RascunhoWorker(threading.Thread):
 
         def decodificar(valor):
             if valor:
-                with Image.open(io.BytesIO(base64.b64decode(valor, validate=True))) as original:
-                    return original.convert("RGB")
+                return decodificar_imagem(valor)
             return None
 
         imagem = decodificar(payload.get("imagem"))
@@ -111,12 +109,8 @@ class RascunhoWorker(threading.Thread):
                                        "operacional": estado.get("operacional", {})}
                 cache_imagens = usados
                 self.arquivo.parent.mkdir(parents=True, exist_ok=True)
-                temporario = self.arquivo.with_suffix(".tmp")
-                with temporario.open("w", encoding="utf-8") as arquivo:
+                with arquivo_atomico(self.arquivo) as arquivo:
                     json.dump(payload, arquivo, ensure_ascii=False)
-                    arquivo.flush()
-                    os.fsync(arquivo.fileno())
-                temporario.replace(self.arquivo)
                 self.eventos.put(("rascunho_salvo", revisao, None))
             except Exception as exc:
                 LOGGER.exception("Falha ao salvar rascunho")

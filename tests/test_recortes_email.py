@@ -1,6 +1,6 @@
-from types import SimpleNamespace
 import tkinter as tk
 import unittest
+from types import SimpleNamespace
 
 from PIL import Image
 

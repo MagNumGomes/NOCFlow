@@ -1,7 +1,7 @@
 """Linha do tempo e acompanhamento local, independentes do status remoto."""
 
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
 
 TIPOS_EVENTO = (
     "Recebido", "Ticket vinculado", "Mensagem copiada", "Envio registrado",

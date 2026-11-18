@@ -1,6 +1,6 @@
 import os
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 
 @unittest.skipUnless(os.getenv("NOC_TEST_BROWSER") == "1", "Defina NOC_TEST_BROWSER=1")
@@ -53,6 +53,76 @@ class ExtensaoOperadorTests(unittest.TestCase):
         self.assertEqual(campos["tempo_apontado"], "preenchido")
         self.assertEqual(campos["atividade"], "pendente")
         self.assertEqual(campos["tipo"], "nao_localizado")
+
+    def test_tipo_interno_aguarda_troca_do_editor_sem_selecionar_acao(self):
+        self.page.set_content('''<form><input id="TicketSubject">
+          <input type="radio" name="TicketType" id="publico" checked><label for="publico">Público</label>
+          <input type="radio" name="TicketType" id="interno"><label for="interno">Interno</label>
+          <button type="button" onclick="window.acaoClicada=true">Ação interna</button>
+          <textarea class="description">Editor público</textarea></form>''')
+        self.page.evaluate('''() => document.querySelector('#interno').addEventListener('click', () => {
+          document.querySelector('textarea').outerHTML = '<textarea class="description">Assinatura</textarea>';
+        })''')
+        resultado = self.preencher()
+        self.assertTrue(resultado["ok"])
+        self.assertTrue(self.page.locator('#interno').is_checked())
+        self.assertIsNone(self.page.evaluate('window.acaoClicada'))
+        self.assertIn('Descrição', self.page.locator('textarea').input_value())
+        self.assertIn('Assinatura', self.page.locator('textarea').input_value())
+
+    def test_interno_confirmado_por_rotulo_e_corpo_sem_linhas_extras(self):
+        self.page.set_content('''<form><input id="TicketSubject">
+          <a onclick="throw new Error('Não deve alternar o tipo')">✓INTERNO</a>
+          <textarea class="description">&lt;div&gt;&lt;p&gt;&lt;br&gt;&lt;/p&gt;&lt;p&gt;&amp;nbsp;&lt;/p&gt;&lt;p&gt;Atenciosamente,&lt;/p&gt;&lt;img src="https://teste/assinatura.png"&gt;&lt;/div&gt;</textarea></form>''')
+        self.page.add_script_tag(content=(self.raiz / "preencher.js").read_text(encoding="utf-8").replace("export async function", "async function", 1))
+        resultado = self.page.evaluate('''() => preencherFormulario({assunto:'Teste', exigir_interno:true,
+          html:'<p><a href="https://teste/alerta">https://teste/alerta</a></p><p><img src="https://teste/alerta.png"></p>'})''')
+        self.assertTrue(resultado["ok"])
+        self.assertEqual(resultado["campos"]["tipo"], "preenchido")
+        corpo = self.page.locator('textarea').input_value()
+        self.assertNotIn('<br>', corpo)
+        self.assertNotIn('&nbsp;', corpo)
+        self.assertIn('assinatura.png', corpo)
+        self.assertIn('alerta.png', corpo)
+
+    def test_nao_preenche_ticket_publico_quando_interno_nao_confirma(self):
+        self.page.set_content('''<form><input id="TicketSubject"><button type="button">INTERNO</button>
+          <textarea class="description">Assinatura</textarea></form>''')
+        self.page.add_script_tag(content=(self.raiz / "preencher.js").read_text(encoding="utf-8").replace("export async function", "async function", 1))
+        resultado = self.page.evaluate("() => preencherFormulario({assunto:'Teste', exigir_interno:true, html:'Alerta'})")
+        self.assertIn('erro', resultado)
+        self.assertEqual(self.page.locator('#TicketSubject').input_value(), '')
+        self.assertEqual(self.page.locator('textarea').input_value(), 'Assinatura')
+
+    def test_formularios_ambiguos_nao_sao_preenchidos(self):
+        self.page.set_content('<form><input name="Subject"><textarea></textarea></form>' * 2)
+        self.assertIn("erro", self.preencher())
+        self.assertEqual(self.page.locator('input').evaluate_all('(els) => els.map(e => e.value)'), ["", ""])
+
+    def test_categoria_com_metacaracteres_e_tratada_como_texto(self):
+        self.page.set_content('''<form><input id="TicketSubject"><textarea class="description"></textarea>
+          <select name="Category"><option>Outro</option><option>Alerta (NOC)+</option></select></form>''')
+        self.page.add_script_tag(content=(self.raiz / "preencher.js").read_text(encoding="utf-8").replace("export async function", "async function", 1))
+        resultado = self.page.evaluate("() => preencherFormulario({assunto:'Teste', html:'<p>Descrição</p>', categoria:'Alerta (NOC)+'})")
+        self.assertEqual(resultado["campos"]["categoria"], "preenchido")
+        self.assertEqual(self.page.locator('select').input_value(), "Alerta (NOC)+")
+
+    def test_userscript_exporta_json_sem_extensao(self):
+        self.page.route("https://zabbix.test/**", lambda r: r.fulfill(body='''<table>
+          <tr><td>Host</td><td>host-01</td></tr><tr><td>Trigger</td><td>CPU alta</td></tr>
+          <tr><td>Severity</td><td>High</td></tr></table>''', content_type="text/html"))
+        self.page.goto("https://zabbix.test/tr_events.php?eventid=10")
+        self.page.evaluate("Object.defineProperty(navigator, 'clipboard', {value: {writeText: async t => window.copia = t}})")
+        from scripts.gerar_userscripts import artefatos
+        fonte = dict(artefatos())["NOCFlow-Zabbix.user.js"]
+        self.page.add_script_tag(content=fonte)
+        self.page.locator('#noc-zabbix > summary').click()
+        self.page.get_by_role('button', name='Copiar dados para NOCFlow', exact=True).click()
+        self.page.wait_for_function("Boolean(window.copia)")
+        dados = self.page.evaluate("JSON.parse(window.copia)")
+        self.assertEqual(dados["versao"], 1)
+        self.assertEqual(dados["eventos"][0]["eventid"], "10")
+        self.assertEqual(dados["eventos"][0]["servidor"], "host-01")
 
     def test_whatsapp_assina_rascunho_sem_enviar_nem_duplicar(self):
         self.page.route("https://web.whatsapp.com/**", lambda r: r.fulfill(body='''<div contenteditable="true" role="textbox" id="busca">Busca</div>
@@ -187,7 +257,7 @@ class ExtensaoOperadorTests(unittest.TestCase):
           <span class="tag">Movidesk: 1249803422</span></td></tr></table>''')
         self.page.add_script_tag(content=(self.raiz / "coletor.js").read_text(encoding="utf-8"))
         dados = self.page.evaluate("() => NOCFlowZabbix.extrair(document, 'https://zabbix.example.com/tr_events.php?eventid=1')")
-        from noc.incidentes import importar_eventos, FilaIncidentes
+        from noc.incidentes import FilaIncidentes, importar_eventos
         eventos = importar_eventos({"versao": 1, "origem": "zabbix", "eventos": [dados]})
         fila = FilaIncidentes()
         ids = fila.importar(eventos)

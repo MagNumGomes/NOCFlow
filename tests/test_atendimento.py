@@ -1,8 +1,8 @@
-from pathlib import Path
+import json
 import queue
 import time
 import unittest
-import json
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 from noc.configuracao import Config

@@ -1,11 +1,11 @@
 """Telas operacionais isoladas do editor de captura e da integração do navegador."""
 
-from copy import deepcopy
-from datetime import timedelta
 import json
-from pathlib import Path
 import queue
 import tkinter as tk
+from copy import deepcopy
+from datetime import timedelta
+from pathlib import Path
 from tkinter import filedialog, ttk
 
 import pyperclip
@@ -17,12 +17,21 @@ from .base_conhecimento import buscar, carregar_base
 from .concorrencia import disparar_assistente
 from .configuracao import url_valida
 from .edge_bridge import abrir_no_edge
-from .historico_atendimento import (TIPOS_EVENTO, agendar_acao, concluir_acompanhamento, instante,
-                                    registrar_evento)
+from .exportacao_pdf import exportar_pdf
+from .historico_atendimento import (
+    TIPOS_EVENTO,
+    agendar_acao,
+    concluir_acompanhamento,
+    instante,
+    registrar_evento,
+)
+from .infra.persistencia import escrever_texto
+from .recorrencia import analisar_recorrencia, formatar_recorrencia
 from .regras_operacionais import aplicar_regra, carregar_perfis, prazos_atendimento
 from .relatorios import diario_bordo, exportar_csv, indicadores, passagem_turno
-from .recorrencia import analisar_recorrencia, formatar_recorrencia
-from .exportacao_pdf import exportar_pdf
+from .ui import central_views
+from .ui.formularios import dialogo, mostrar_texto, texto_area
+from .ui.tarefas import TarefasUI
 
 ORIGENS = ("Zabbix", "Grafana", "Teams", "WhatsApp", "E-mail", "Telefone", "Manual", "Dynatrace", "Jira")
 NATUREZAS = ("Incidente", "Solicitação", "Encaminhamento", "Mudança", "Rotina")
@@ -34,26 +43,6 @@ PERFIL_EXEMPLO = {"versao": 1, "perfis": [{
                               "encerramento": "apos_validacao", "comunicar_sem_ticket": False,
                               "prazos": [{"acao": "Solicitar retorno", "marco": "envio", "minutos": 15}]}}],
 }]}
-
-
-def texto_area(pai, altura=10, editavel=False):
-    area = ttk.Frame(pai)
-    area.pack(fill="both", expand=True, pady=4)
-    texto = tk.Text(area, wrap="word", height=altura, width=1, font=("Segoe UI", 10), padx=8, pady=8)
-    barra = ttk.Scrollbar(area, command=texto.yview)
-    texto.configure(yscrollcommand=barra.set)
-    barra.pack(side="right", fill="y")
-    texto.pack(side="left", fill="both", expand=True)
-    if not editavel:
-        texto.configure(state="disabled")
-    return texto
-
-
-def mostrar_texto(widget, texto):
-    widget.configure(state="normal")
-    widget.delete("1.0", "end")
-    widget.insert("1.0", texto)
-    widget.configure(state="disabled")
 
 
 class CentralOperacional:
@@ -73,6 +62,7 @@ class CentralOperacional:
         self.fontes_busca = []
         self.resumo = tk.StringVar(self.janela)
         self.aviso = tk.StringVar(self.janela)
+        self.tarefas = TarefasUI(self.janela, self.aviso.set)
         self.cache_tela = None
         self.rodadas = 0
         topo = ttk.Frame(self.janela, padding=10)
@@ -92,11 +82,11 @@ class CentralOperacional:
         for aba, nome in ((self.pendencias, "Pendências"), (self.painel, "Acompanhamento"), (self.agenda, "Agenda"),
                           (self.conhecimento, "Procedimentos e IA"), (self.relatorios, "Diário e passagem")):
             abas.add(aba, text=nome)
-        self.montar_acompanhamento()
-        self.montar_pendencias()
-        self.montar_agenda()
-        self.montar_conhecimento()
-        self.montar_relatorios()
+        central_views.montar_acompanhamento(self)
+        central_views.montar_pendencias(self)
+        central_views.montar_agenda(self)
+        central_views.montar_conhecimento(self)
+        central_views.montar_relatorios(self)
         self.atualizar()
         self.timer = self.janela.after(150, self.processar)
 
@@ -124,80 +114,18 @@ class CentralOperacional:
         return self.app.avaliar_perfil(self.item()["dados"])
 
     def dialogo(self, titulo, campos, confirmar):
-        janela = tk.Toplevel(self.janela)
-        janela.title(titulo)
-        janela.transient(self.janela)
-        janela.geometry("700x640" if len(campos) > 10 else "680x520")
-        aviso = tk.StringVar(janela)
-        ttk.Label(janela, textvariable=aviso, wraplength=640).pack(side="bottom", fill="x", padx=12, pady=4)
-        botoes = ttk.Frame(janela, padding=8)
-        botoes.pack(side="bottom", fill="x")
-        canvas = tk.Canvas(janela, highlightthickness=0)
-        barra = ttk.Scrollbar(janela, command=canvas.yview)
-        canvas.configure(yscrollcommand=barra.set)
-        barra.pack(side="right", fill="y")
-        canvas.pack(fill="both", expand=True)
-        corpo = ttk.Frame(canvas, padding=12)
-        corpo.columnconfigure(1, weight=1)
-        janela_canvas = canvas.create_window((0, 0), window=corpo, anchor="nw")
-        corpo.bind("<Configure>", lambda _: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(janela_canvas, width=e.width))
-        valores = {}
-        for n, (chave, rotulo, valor, opcoes) in enumerate(campos):
-            ttk.Label(corpo, text=rotulo, wraplength=180).grid(row=n, column=0, sticky="nw", padx=(0, 8), pady=4)
-            if opcoes == "texto":
-                entrada = tk.Text(corpo, name=chave, height=5, width=35, wrap="word", font=("Segoe UI", 10))
-                entrada.insert("1.0", valor)
-                valores[chave] = entrada
-            else:
-                variavel = tk.StringVar(janela, valor)
-                valores[chave] = variavel
-                entrada = ttk.Combobox(corpo, name=chave, textvariable=variavel, values=opcoes, state="readonly") if opcoes else ttk.Entry(corpo, name=chave, textvariable=variavel)
-            entrada.grid(row=n, column=1, sticky="ew", pady=4)
-
-        def salvar():
-            try:
-                if self.app.fechando or self.app.carregando or self.app.operacao:
-                    raise ValueError("Aguarde a operação do aplicativo.")
-                self.app.guardar_incidente()
-                dados = {c: (v.get("1.0", "end-1c") if isinstance(v, tk.Text) else v.get()).strip() for c, v in valores.items()}
-                confirmar(dados)
-                janela.destroy()
-                self.salvar()
-            except (ValueError, OSError, KeyError, TypeError) as exc:
-                aviso.set(str(exc))
-        ttk.Button(botoes, text="Salvar", command=salvar).pack(side="right")
-        ttk.Button(botoes, text="Cancelar", command=janela.destroy).pack(side="right", padx=8)
-        return janela
+        def aplicar(dados):
+            if self.app.fechando or self.app.carregando or self.app.operacao:
+                raise ValueError("Aguarde a operação do aplicativo.")
+            self.app.guardar_incidente()
+            confirmar(dados)
+        return dialogo(self.janela, titulo, campos, aplicar, self.salvar)
 
     def localizar(self, identificador):
         item = self.app.fila.obter(identificador)
         if item is None:
             raise ValueError("O atendimento foi removido. Reabra a tela após recuperá-lo.")
         return item
-
-    def montar_acompanhamento(self):
-        linha = ttk.Frame(self.painel)
-        linha.pack(fill="x")
-        for texto, funcao in (("Registrar ação", self.registrar_acao), ("Próxima ação", self.proxima_acao),
-                              ("Avaliar regra", self.ver_regra), ("Referências", self.vincular_referencia),
-                              ("Relacionar", self.relacionar), ("Concluir / reabrir", self.concluir)):
-            ttk.Button(linha, text=texto, command=lambda f=funcao: self.executar(f)).pack(side="left", padx=2)
-        linha2 = ttk.Frame(self.painel)
-        linha2.pack(fill="x", pady=4)
-        for texto, funcao in (("Carregar perfis privados", self.abrir_perfis), ("Exportar perfil de exemplo", self.exemplo_perfil),
-                              ("Organizar relato com IA", self.ia_relato), ("Coordenação / pós-incidente", self.coordenacao)):
-            ttk.Button(linha2, text=texto, command=lambda f=funcao: self.executar(f)).pack(side="left", padx=2)
-        self.historico = texto_area(self.painel)
-
-    def montar_pendencias(self):
-        ttk.Label(self.pendencias, text="Atendimentos ativos, ordenados pela próxima ação. Dê dois cliques para abrir.").pack(anchor="w", pady=6)
-        self.lista_pendencias = ttk.Treeview(self.pendencias, columns=("resumo", "estado", "acao", "prazo"), show="headings")
-        for coluna, titulo in (("resumo", "Atendimento"), ("estado", "Estado local"), ("acao", "Próxima ação"), ("prazo", "Prazo")):
-            self.lista_pendencias.heading(coluna, text=titulo)
-            self.lista_pendencias.column(coluna, width=200)
-        self.lista_pendencias.pack(fill="both", expand=True)
-        self.lista_pendencias.bind("<Double-1>", lambda _: self.executar(self.abrir_pendencia))
 
     def abrir_pendencia(self):
         selecao = self.lista_pendencias.selection()
@@ -277,17 +205,19 @@ class CentralOperacional:
         arquivo = filedialog.askopenfilename(parent=self.janela, title="Selecionar perfis privados", filetypes=[("JSON", "*.json")])
         if not arquivo:
             return
-        perfis = carregar_perfis(arquivo)
-        self.app.perfis_operacionais = perfis
-        self.app.erro_perfis = ""
-        self.app.fila.operacional["arquivo_perfis"] = str(Path(arquivo).resolve())
-        self.salvar(f"{len(perfis)} perfil(is) carregado(s). Selecione o perfil em Editar atendimento.")
+        def concluir(perfis):
+            self.app.perfis_operacionais = perfis
+            self.app.erro_perfis = ""
+            self.app.fila.operacional["arquivo_perfis"] = arquivo
+            self.salvar(f"{len(perfis)} perfil(is) carregado(s). Selecione o perfil em Editar atendimento.")
+        self.tarefas.enviar("perfis", lambda: carregar_perfis(arquivo), concluir)
 
     def exemplo_perfil(self):
         arquivo = filedialog.asksaveasfilename(parent=self.janela, title="Salvar exemplo fictício", defaultextension=".json", initialfile="perfil-demonstracao.json")
         if arquivo:
-            Path(arquivo).write_text(json.dumps(PERFIL_EXEMPLO, ensure_ascii=False, indent=2), encoding="utf-8")
-            self.aviso.set("Exemplo salvo como rascunho; ajuste os parâmetros e o estado antes de usar.")
+            texto = json.dumps(PERFIL_EXEMPLO, ensure_ascii=False, indent=2)
+            self.tarefas.enviar("exemplo_perfil", lambda: escrever_texto(Path(arquivo), texto),
+                                lambda _: self.aviso.set("Exemplo salvo como rascunho; ajuste os parâmetros e o estado antes de usar."))
 
     def ver_regra(self):
         decisao = self.decisao()
@@ -381,20 +311,6 @@ class CentralOperacional:
             ("causa", "Causa confirmada (se houver)", "", "texto"), ("acao", "Ação pós-incidente", "", None),
             ("responsavel", "Responsável", "", None), ("prazo", "Prazo com fuso", "", None))], confirmar)
 
-    def montar_agenda(self):
-        botoes = ttk.Frame(self.agenda)
-        botoes.pack(fill="x")
-        for texto, funcao in (("Nova rotina", self.nova_rotina), ("Registrar execução", self.execucao),
-                              ("Abrir dashboard", self.abrir_dashboard), ("Pausar / retomar", self.pausar_rotina)):
-            ttk.Button(botoes, text=texto, command=lambda f=funcao: self.executar(f)).pack(side="left", padx=3)
-        self.lista_agenda = ttk.Treeview(self.agenda, columns=("titulo", "prazo", "estado", "responsavel"), show="headings", height=8)
-        for c, titulo in (("titulo", "Rotina"), ("prazo", "Próxima execução"), ("estado", "Estado"), ("responsavel", "Responsável")):
-            self.lista_agenda.heading(c, text=titulo)
-            self.lista_agenda.column(c, width=190)
-        self.lista_agenda.pack(fill="both", expand=True, pady=8)
-        self.lista_agenda.bind("<<TreeviewSelect>>", lambda _: self.detalhar_rotina())
-        self.detalhe_rotina = texto_area(self.agenda, altura=5)
-
     def rotina(self):
         selecionadas = self.lista_agenda.selection()
         if not selecionadas:
@@ -446,49 +362,45 @@ class CentralOperacional:
         rotina["ativa"] = not rotina.get("ativa", True)
         self.salvar("Rotina atualizada; ocorrências anteriores preservadas.")
 
-    def montar_conhecimento(self):
-        topo = ttk.Frame(self.conhecimento)
-        topo.pack(fill="x")
-        ttk.Button(topo, text="Selecionar base privada", command=lambda: self.executar(self.abrir_base)).pack(side="left")
-        ttk.Button(topo, text="Exportar índice modelo", command=lambda: self.executar(self.exemplo_base)).pack(side="left", padx=4)
-        self.consulta = tk.StringVar(self.janela)
-        ttk.Entry(topo, textvariable=self.consulta).pack(side="left", fill="x", expand=True, padx=6)
-        ttk.Button(topo, text="Buscar localmente", command=lambda: self.executar(self.buscar_base)).pack(side="left")
-        linha = ttk.Frame(self.conhecimento)
-        linha.pack(fill="x", pady=4)
-        ttk.Button(linha, text="Explicar fontes com IA", command=lambda: self.executar(self.ia_procedimentos)).pack(side="left")
-        ttk.Button(linha, text="Revisar lacunas com IA", command=lambda: self.executar(lambda: self.ia_procedimentos(True))).pack(side="left", padx=6)
-        ttk.Label(self.conhecimento, text="A busca usa o perfil e serviço do atendimento. A IA recebe apenas os trechos exibidos abaixo.", wraplength=850).pack(anchor="w")
-        self.resultado_busca = texto_area(self.conhecimento)
-
     def abrir_base(self):
         pasta = filedialog.askdirectory(parent=self.janela, title="Base privada com indice.json e procedimentos Markdown")
         if not pasta:
             return
-        documentos = carregar_base(pasta)
-        self.documentos = documentos
-        self.fontes_busca = []
-        self.app.fila.operacional["diretorio_conhecimento"] = str(Path(pasta).resolve())
-        self.salvar(f"{len(documentos)} documento(s) validado(s) disponível(is).")
+        def concluir(documentos):
+            self.documentos = documentos
+            self.fontes_busca = []
+            self.app.fila.operacional["diretorio_conhecimento"] = pasta
+            self.salvar(f"{len(documentos)} documento(s) validado(s) disponível(is).")
+        self.tarefas.enviar("base", lambda: carregar_base(pasta), concluir)
 
     def exemplo_base(self):
         arquivo = filedialog.asksaveasfilename(parent=self.janela, title="Salvar índice demonstrativo", defaultextension=".json", initialfile="indice.json")
         if arquivo:
             exemplo = {"versao": 1, "documentos": [{"id": "procedimento-exemplo", "titulo": "Procedimento de demonstração",
                 "versao": "1", "estado": "rascunho", "arquivo": "procedimento-exemplo.md", "perfis": ["demonstracao"], "servicos": []}]}
-            Path(arquivo).write_text(json.dumps(exemplo, ensure_ascii=False, indent=2), encoding="utf-8")
-            self.aviso.set("Índice modelo salvo. Cadastre seus arquivos privados e marque como validado somente o conteúdo vigente.")
+            texto = json.dumps(exemplo, ensure_ascii=False, indent=2)
+            self.tarefas.enviar("exemplo_base", lambda: escrever_texto(Path(arquivo), texto),
+                                lambda _: self.aviso.set("Índice modelo salvo. Cadastre seus arquivos privados e marque como validado somente o conteúdo vigente."))
 
-    def buscar_base(self):
+    def buscar_base(self, ao_concluir=None):
         pasta = self.app.fila.operacional.get("diretorio_conhecimento")
         if not pasta:
             raise ValueError("Selecione a pasta da base privada. Ela deve conter indice.json versão 1 e documentos com id, titulo, versao, estado, arquivo, perfis e servicos.")
-        self.documentos = carregar_base(pasta)
-        dados = self.item()["dados"]
-        self.fontes_busca = buscar(self.documentos, self.consulta.get(), dados.get("perfil", ""), dados.get("servico", ""))
-        self.contexto_busca = (dados.get("perfil", ""), dados.get("servico", ""))
-        mostrar_texto(self.resultado_busca, "\n\n".join(f"[{f['id']}] {f['titulo']} · {f['secao']}\n{f['texto']}" for f in self.fontes_busca)
-                      or "Nenhum procedimento vigente e aplicável encontrado.")
+        dados, consulta = dict(self.item()["dados"]), self.consulta.get()
+        identificador = self.item()["id"]
+        def consultar():
+            return buscar(carregar_base(pasta), consulta, dados.get("perfil", ""), dados.get("servico", ""))
+        def concluir(fontes):
+            atual = self.item()
+            if atual["id"] != identificador or any(atual["dados"].get(c) != dados.get(c) for c in ("perfil", "servico")):
+                self.aviso.set("O contexto mudou. Faça uma nova busca.")
+                return
+            self.fontes_busca = fontes
+            mostrar_texto(self.resultado_busca, "\n\n".join(f"[{f['id']}] {f['titulo']} · {f['secao']}\n{f['texto']}" for f in fontes)
+                          or "Nenhum procedimento vigente e aplicável encontrado.")
+            if ao_concluir:
+                ao_concluir(fontes)
+        self.tarefas.enviar("busca", consultar, concluir)
 
     def iniciar_ia(self, funcao, ao_concluir, tarefa="consulta"):
         if self.ia_ativa:
@@ -553,12 +465,12 @@ class CentralOperacional:
         ttk.Button(janela, text="Aplicar campos selecionados", command=aplicar).pack(pady=8)
 
     def ia_procedimentos(self, revisar=False):
-        self.buscar_base()
-        fontes = deepcopy(self.fontes_busca)
         pergunta = "Identifique lacunas, ambiguidades e conflitos nos procedimentos fornecidos, sem inventar regras." if revisar else self.consulta.get()
         config = self.app.config
-        self.iniciar_ia(lambda: responder_com_fontes(config, pergunta, fontes), self.mostrar_resposta_ia,
-                       "revisar_procedimentos" if revisar else "consultar_procedimentos")
+        def consultar(fontes):
+            self.iniciar_ia(lambda: responder_com_fontes(config, pergunta, fontes), self.mostrar_resposta_ia,
+                           "revisar_procedimentos" if revisar else "consultar_procedimentos")
+        self.buscar_base(consultar)
 
     def mostrar_resposta_ia(self, resposta):
         janela = tk.Toplevel(self.janela)
@@ -569,34 +481,6 @@ class CentralOperacional:
         texto += "\n\nPendências:\n" + "\n".join(resposta["pendencias"])
         mostrar_texto(area, texto)
         ttk.Button(janela, text="Copiar rascunho", command=lambda: self.executar(lambda: pyperclip.copy(texto))).pack(pady=8)
-
-    def montar_relatorios(self):
-        linha = ttk.Frame(self.relatorios)
-        linha.pack(fill="x")
-        self.inicio = tk.StringVar(self.janela, (instante() - timedelta(hours=12)).astimezone().isoformat(timespec="seconds"))
-        self.fim = tk.StringVar(self.janela, instante().astimezone().isoformat(timespec="seconds"))
-        for rotulo, var in (("De (inclusivo)", self.inicio), ("Até (exclusivo)", self.fim)):
-            ttk.Label(linha, text=rotulo).pack(side="left")
-            ttk.Entry(linha, textvariable=var, width=27).pack(side="left", padx=5)
-        botoes = ttk.Frame(self.relatorios)
-        botoes.pack(fill="x", pady=6)
-        for texto, funcao in (("Diário", self.gerar_diario), ("Passagem", self.gerar_passagem), ("Indicadores", self.gerar_indicadores),
-                              ("Exportar CSV", self.exportar), ("Resumo com IA", self.ia_resumo), ("Registrar recebimento", self.receber_turno)):
-            ttk.Button(botoes, text=texto, command=lambda f=funcao: self.executar(f)).pack(side="left", padx=2)
-        filtros = ttk.Frame(self.relatorios)
-        filtros.pack(fill="x", pady=4)
-        self.recorrencia_periodo = tk.BooleanVar(self.janela, False)
-        self.recorrencia_arquivados = tk.BooleanVar(self.janela, False)
-        self.recorrencia_ativo = tk.BooleanVar(self.janela, False)
-        ttk.Button(filtros, text="Recorrência de tickets", command=lambda: self.executar(self.gerar_recorrencia)).pack(side="left")
-        for rotulo, var in (("Usar período acima", self.recorrencia_periodo),
-                            ("Incluir arquivados", self.recorrencia_arquivados), ("Separar por ativo", self.recorrencia_ativo)):
-            ttk.Checkbutton(filtros, text=rotulo, variable=var).pack(side="left", padx=4)
-        ttk.Label(self.relatorios, text="Recorrência: tickets distintos por perfil, serviço e resumo. Gere novamente após mudar os filtros.",
-                  wraplength=850).pack(anchor="w")
-        self.relatorio = texto_area(self.relatorios)
-        ttk.Button(self.relatorios, text="Exportar PDF do texto exibido", command=lambda: self.executar(self.exportar_relatorio_pdf)).pack(anchor="e", pady=3)
-        ttk.Button(self.relatorios, text="Copiar texto exibido", command=lambda: self.executar(lambda: pyperclip.copy(self.relatorio.get("1.0", "end-1c")))).pack(anchor="e")
 
     def gerar_diario(self):
         mostrar_texto(self.relatorio, diario_bordo(self.app.fila.itens, self.inicio.get(), self.fim.get()))
@@ -615,8 +499,8 @@ class CentralOperacional:
         destino = filedialog.asksaveasfilename(parent=self.janela, title="Exportar relatório em PDF",
             defaultextension=".pdf", initialfile="relatorio-noc.pdf", filetypes=[("PDF", "*.pdf")])
         if destino:
-            exportar_pdf(destino, texto)
-            self.aviso.set("PDF exportado com o relatório exibido.")
+            self.tarefas.enviar("pdf", lambda: exportar_pdf(destino, texto),
+                                lambda _: self.aviso.set("PDF exportado com o relatório exibido."))
 
     def gerar_passagem(self):
         mostrar_texto(self.relatorio, passagem_turno(self.app.fila.itens, self.app.fila.operacional))
@@ -625,11 +509,12 @@ class CentralOperacional:
         mostrar_texto(self.relatorio, json.dumps(indicadores(self.app.fila.itens, self.app.fila.operacional, self.inicio.get(), self.fim.get()), ensure_ascii=False, indent=2))
 
     def exportar(self):
-        conteudo = exportar_csv(self.app.fila.itens, self.inicio.get(), self.fim.get())
+        itens = self.app.fila.snapshot()["itens"]
+        inicio, fim = self.inicio.get(), self.fim.get()
         destino = filedialog.asksaveasfilename(parent=self.janela, defaultextension=".csv", initialfile="diario-noc.csv")
         if destino:
-            Path(destino).write_text(conteudo, encoding="utf-8-sig")
-            self.aviso.set("CSV exportado com os registros do período selecionado.")
+            self.tarefas.enviar("csv", lambda: escrever_texto(Path(destino), exportar_csv(itens, inicio, fim), "utf-8-sig"),
+                                lambda _: self.aviso.set("CSV exportado com os registros do período selecionado."))
 
     def ia_resumo(self):
         texto = self.relatorio.get("1.0", "end-1c").strip()
@@ -728,7 +613,12 @@ class CentralOperacional:
     def fechar(self):
         if self.fechada:
             return
+        if self.tarefas.callbacks:
+            self.aviso.set("Aguarde a conclusão das tarefas locais antes de fechar.")
+            self.janela.after(100, self.fechar)
+            return
         self.fechada = True
+        self.tarefas.fechar()
         if self.timer:
             self.janela.after_cancel(self.timer)
             self.timer = None

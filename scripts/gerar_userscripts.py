@@ -1,18 +1,20 @@
 """Gera os userscripts a partir dos mesmos coletores usados na extensão."""
 
+import json
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1]
 
 
 def artefatos():
+    versao = json.loads((RAIZ / "edge_extension/manifest.json").read_text(encoding="utf-8"))["version"]
     for nome, descricao, matches, arquivos in (
         ("Zabbix", "Coleta local de eventos, seleção em lote e imagens sob demanda", ["https://zabbix.example.com/*", "https://zabbix-secondary.example.com/*"], ["coletor.js", "zabbix.js"]),
         ("Movidesk", "Copia número, assunto, link e template sem polling periódico", ["https://*.movidesk.com/*"], ["movidesk.js"]),
     ):
         cabecalho = "\n".join([
             "// ==UserScript==", f"// @name         NOCFlow - {nome} - Local", "// @namespace    nocflow",
-            "// @version      2.1.0", f"// @description  {descricao}",
+            f"// @version      {versao}", f"// @description  {descricao}",
             *(f"// @match        {match}" for match in matches),
             "// @grant        none", "// @run-at       document-idle", "// ==/UserScript==", "",
             "// Gerado por gerar_userscripts.py; edite as fontes em edge_extension/.", "",

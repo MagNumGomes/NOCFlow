@@ -1,8 +1,8 @@
 """Diário, passagem e indicadores reproduzíveis a partir dos registros locais."""
 
-from collections import Counter
 import csv
 import io
+from collections import Counter
 
 from .historico_atendimento import instante
 

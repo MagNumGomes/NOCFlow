@@ -16,11 +16,12 @@ analise = Analysis(
     pathex=[str(raiz)],
     binaries=collect_dynamic_libs("winrt"),
     datas=dados,
+    # noc.ui/domain/services/infra usam imports estáticos, descobertos por Analysis.
     hiddenimports=collect_submodules("google.ai.generativelanguage") + collect_submodules("groq") + collect_submodules("winrt"),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["playwright"],
+    excludes=["playwright", "pypdf", "ruff", "tests"],
     noarchive=False,
 )
 pyz = PYZ(analise.pure)

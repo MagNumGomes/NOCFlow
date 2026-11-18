@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NOCFlow - Movidesk - Local
 // @namespace    nocflow
-// @version      2.1.0
+// @version      2.2.3
 // @description  Copia número, assunto, link e template sem polling periódico
 // @match        https://*.movidesk.com/*
 // @grant        none

@@ -1,17 +1,17 @@
 import json
 import os
-from pathlib import Path
 import queue
 import tempfile
 import unittest
+from pathlib import Path
 
 from PIL import Image
 
+from noc.configuracao import Config
 from noc.extracao_local import interpretar_ocr, texto_relevante
 from noc.incidentes import FilaIncidentes, importar_eventos
-from noc.configuracao import Config
-from noc.rascunhos import RascunhoWorker
 from noc.ocr_windows import organizar_palavras
+from noc.rascunhos import RascunhoWorker
 
 
 def evento(eventid="10", dominio="https://zabbix.test", **campos):
@@ -257,6 +257,6 @@ class ColetorDOMTests(unittest.TestCase):
 
 class UserscriptsTests(unittest.TestCase):
     def test_artefatos_distribuidos_correspondem_as_fontes(self):
-        from scripts.gerar_userscripts import artefatos, RAIZ
+        from scripts.gerar_userscripts import RAIZ, artefatos
         for nome, esperado in artefatos():
             self.assertEqual((RAIZ / "tampermonkey" / nome).read_text(encoding="utf-8"), esperado)

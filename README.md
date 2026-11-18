@@ -23,7 +23,7 @@ Aplicativo desktop para Windows criado para apoiar equipes de **NOC (Network Ope
 | Dor comum na rotina do NOC | Como o NOCFlow resolve |
 |---|---|
 | **Trabalho repetitivo de copiar e colar** entre Zabbix, Movidesk, WhatsApp, Teams e E-mail a cada alerta. | Importa os dados direto da página do Zabbix (individual ou em lote de até 100 eventos) com 1 clique e já monta o ticket e os comunicados padronizados para cada canal. |
-| **Abertura lenta de chamados**, exigindo preencher título, tipo interno, categoria, urgência, solicitante, serviço, horas e colar print manualmente. | A extensão no Microsoft Edge preenche automaticamente título, descrição com link + print embutido, tipo/ação interna, categoria, urgência, solicitante/serviço (via tags) e apontamento padrão (`00:03` / `Observability`), devolvendo o número do ticket salvo direto ao incidente de origem. |
+| **Abertura lenta de chamados**, exigindo preencher título, tipo interno, categoria, urgência, solicitante, serviço, horas e colar print manualmente. | A extensão no Microsoft Edge seleciona e confirma o tipo Interno antes de preencher título, descrição com link + print, categoria, urgência, solicitante/serviço (via tags) e apontamento padrão (`00:03` / `Observability`), devolvendo o número do ticket salvo ao incidente de origem. |
 | **Perda de contexto ao atender vários incidentes ao mesmo tempo**, misturando prints, números de chamados ou rascunhos. | Fila local persistente com salvamento automático: cada incidente guarda seus próprios campos, imagem, recortes, linha do tempo e vínculo de retorno do ticket, mesmo que você troque de item enquanto trabalha. |
 | **Alertas que chegam apenas por print de tela** em grupos ou conversas, obrigando o operador a digitar tudo manualmente. | Leitura instantânea por **OCR nativo do Windows** (offline e sem custo de tokens), extraindo Host, Trigger, Severidade, Dados Operacionais e Horário diretamente da imagem copiada (`Win+Shift+S`), com opção de complemento por IA apenas para lacunas. |
 | **Edição manual demorada de prints** para destacar apenas Host, Trigger e Severidade em comunicados de e-mail. | Editor visual integrado de recortes com zoom e geração automática da tabela renderizada direto do Zabbix. |
@@ -39,6 +39,7 @@ Aplicativo desktop para Windows criado para apoiar equipes de **NOC (Network Ope
 - **Atendimento multicanal e fila inteligente:** busca instantânea, filtros por etapa e severidade, proteção de campos revisados manualmente, histórico de eventos e arquivamento.
 - **Comunicados prontos e assinatura no WhatsApp Web:** templates para WhatsApp, Teams e E-mail (*Abertura normal*, *Abertura inicial*, *Acionamento*, *Atualização* e *Normalização*), além de popup na extensão para assinar mensagens direto no WhatsApp Web sem envio acidental.
 - **Central Operacional integrada:** avaliação de regras por perfil, agenda de rotinas de turno, consulta a procedimentos locais, auditoria de recorrência e exportação de relatórios em PDF e CSV.
+- **Destinatários por empresa:** cadastro local de múltiplos e-mails em Para e Cc, seleção por dropdown, edição/exclusão e botões separados para copiar cada lista em **Comunicar → E-mail**.
 - **OCR local + IA sob demanda:** fluxo principal 100% local e gratuito; integração opcional com **Groq** e **Google Gemini** apenas quando solicitada para completar capturas difíceis, estruturar relatos livres ou resumir procedimentos citando fontes.
 
 ---
@@ -98,7 +99,7 @@ Escolha **apenas uma** das duas opções abaixo conforme o que você tem em mão
    - Dentro da pasta do projeto, abra a subpasta **`scripts`** e dê dois cliques em **`Build Windows.cmd`**.
    - Aguarde cerca de 1 minuto enquanto ele instala tudo e empacota o programa automaticamente.
    - Ao terminar, aparecerá a mensagem **`Atalho criado na Area de Trabalho`**. Basta dar dois cliques no ícone **`NOCFlow`** que surgiu na sua Área de Trabalho!
-   - *(Alternativa rápida pelo terminal sem gerar executável: clique com o botão direito na pasta do projeto → **Abrir no Terminal** e rode `python -m venv .venv`, `.\.venv\Scripts\python.exe -m pip install -r requirements.txt`, `Copy-Item .env.example .env` e `.\.venv\Scripts\python.exe app_noc.py`).*
+    - *(Alternativa rápida pelo terminal sem gerar executável: clique com o botão direito na pasta do projeto → **Abrir no Terminal** e rode `python -m venv .venv`, `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` e `.\.venv\Scripts\python.exe app_noc.py`. O `.env` é preparado automaticamente, preservando configurações existentes.)*
 
 ---
 
@@ -173,3 +174,24 @@ Agora que o aplicativo e a extensão estão instalados, veja como usar no dia a 
    - Vá na aba **`Comunicar`** do NOCFlow, escolha **WhatsApp**, **Teams** ou **E-mail**, clique em **`Copiar mensagem`** e cole no grupo ou conversa do atendimento.
 
 Para explorar recursos avançados — como recortes de imagem, leitura de prints avulsos com OCR (`Win+Shift+S`), regras por cliente, agenda de rotinas e relatórios em PDF na **Central Operacional** — consulte o **[Manual de Uso Completo](docs/manual.md)**.
+
+## Desenvolvimento e validação
+
+No ambiente com `requirements-dev.txt` instalado:
+
+```powershell
+python -m playwright install chromium --no-shell
+$env:NOC_TEST_BROWSER = "1"
+python -m unittest discover -s tests -v
+python -m ruff check .
+python scripts/verificar_build.py
+```
+
+O verificador executa OCR/Tkinter/PDF/ponte offline e grava `build/verificacao-fonte.json`.
+Para homologar o pacote sem copiar dados pessoais ou criar atalhos:
+
+```powershell
+.\build.ps1 -SomentePacote -PastaSaida dist
+```
+
+Diagnóstico local: `.noc_data/logs/noc.jsonl` (rotação automática). A aplicação permite uma instância por diretório de dados.

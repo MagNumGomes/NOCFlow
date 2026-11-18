@@ -1,5 +1,7 @@
 """Auditoria determinística de recorrência sobre um retrato da fila local."""
 
+import contextlib
+
 from .atendimento import normalizar, ticket_valido
 from .historico_atendimento import instante
 
@@ -14,10 +16,8 @@ def _recebido(meta):
     datas = []
     for valor in valores:
         if valor:
-            try:
+            with contextlib.suppress(ValueError):
                 datas.append(instante(valor))
-            except ValueError:
-                pass
     return min(datas) if datas else None
 
 

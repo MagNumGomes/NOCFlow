@@ -1,14 +1,14 @@
 """Validação do formulário e templates locais para tickets e comunicados."""
 
 import base64
-from datetime import datetime
-from html import escape
 import io
 import re
+from datetime import datetime
+from html import escape
 
+from .atendimento import link_ticket
 from .configuracao import url_valida
 from .incidentes import CAMPOS_FORMULARIO
-from .atendimento import link_ticket
 
 
 def validar_dados(dados, finalidade, permitir_sem_ticket=False):

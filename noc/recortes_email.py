@@ -1,54 +1,16 @@
 """Seleção de três trechos do print original para a comunicação por e-mail."""
 
-import math
 import tkinter as tk
 from tkinter import ttk
 
-from PIL import Image, ImageTk
+from PIL import ImageTk
 
+from .services.evidencias import CAMPOS_RECORTE, montar_recortes
+from .services.evidencias import caixa_original as caixa_original
+from .ui.imagem_canvas import ImagemCanvas
+from .ui.tarefas import TarefasUI
 
-CAMPOS_RECORTE = ("Host", "Trigger", "Severity")
 CORES = ("#38bdf8", "#a78bfa", "#fb923c")
-
-
-def caixa_original(inicio, fim, tamanho_original, tamanho_exibido):
-    """Converte coordenadas do canvas com zoom em pixels do print, sem deformar."""
-    largura, altura = tamanho_original
-    exibida_largura, exibida_altura = tamanho_exibido
-    x1, x2 = sorted((inicio[0], fim[0]))
-    y1, y2 = sorted((inicio[1], fim[1]))
-    caixa = (
-        max(0, min(largura, math.floor(x1 * largura / exibida_largura))),
-        max(0, min(altura, math.floor(y1 * altura / exibida_altura))),
-        max(0, min(largura, math.ceil(x2 * largura / exibida_largura))),
-        max(0, min(altura, math.ceil(y2 * altura / exibida_altura))),
-    )
-    if caixa[2] - caixa[0] < 2 or caixa[3] - caixa[1] < 2:
-        raise ValueError("Arraste para marcar uma área com pelo menos 2 × 2 pixels.")
-    return caixa
-
-
-def montar_recortes(imagem, caixas):
-    """Empilha Host, Trigger e Severity mantendo os pixels e cores dos recortes."""
-    recortes = []
-    for campo in CAMPOS_RECORTE:
-        caixa = caixas.get(campo)
-        if caixa is None or len(caixa) != 4:
-            raise ValueError(f"Selecione a área de {campo} no print.")
-        x1, y1, x2, y2 = caixa
-        if not (0 <= x1 < x2 <= imagem.width and 0 <= y1 < y2 <= imagem.height):
-            raise ValueError(f"O recorte de {campo} está fora do print. Selecione novamente.")
-        recortes.append(imagem.crop(caixa).convert("RGB"))
-    largura = max(recorte.width for recorte in recortes)
-    altura = sum(recorte.height for recorte in recortes) + 12
-    resultado = Image.new("RGB", (largura, altura), recortes[0].getpixel((0, 0)))
-    y = 0
-    for recorte in recortes:
-        # Completa a largura com a cor da própria linha, sem esticar seu texto.
-        resultado.paste(recorte.getpixel((0, 0)), (0, y, largura, y + recorte.height))
-        resultado.paste(recorte, (0, y))
-        y += recorte.height + 6
-    return resultado
 
 
 class EditorRecortes(tk.Toplevel):
@@ -64,6 +26,8 @@ class EditorRecortes(tk.Toplevel):
         self.inicio = None
         self.campo = tk.StringVar(self, next((c for c in CAMPOS_RECORTE if c not in caixas), "Host"))
         self.mensagem = tk.StringVar(self)
+        self.tarefas = TarefasUI(self, self.mensagem.set)
+        self.bind("<Destroy>", lambda e: self.tarefas.fechar() if e.widget is self else None, add="+")
         self.resumo = tk.StringVar(self)
         self.zoom = tk.StringVar(self, "Ajustar")
 
@@ -114,6 +78,7 @@ class EditorRecortes(tk.Toplevel):
         self.canvas.bind("<ButtonRelease-1>", self.terminar)
         self.canvas.bind("<MouseWheel>", lambda e: self.canvas.yview_scroll(-int(e.delta / 120), "units"))
         self.canvas.bind("<Configure>", lambda _: self.renderizar() if self.zoom.get() == "Ajustar" else None)
+        self.renderizador = ImagemCanvas(self, self.canvas, imagem, self.desenhar_caixas)
         self.bind("<Escape>", lambda _: self.destroy())
         self.update_idletasks()
         self.renderizar()
@@ -132,10 +97,7 @@ class EditorRecortes(tk.Toplevel):
         else:
             fator = int(self.zoom.get().rstrip("%")) / 100
         self.tamanho_exibido = (max(1, round(self.imagem.width * fator)), max(1, round(self.imagem.height * fator)))
-        self.foto = ImageTk.PhotoImage(self.imagem.resize(self.tamanho_exibido, Image.Resampling.LANCZOS), master=self)
-        self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor="nw", image=self.foto)
-        self.canvas.configure(scrollregion=(0, 0, *self.tamanho_exibido))
+        self.renderizador.solicitar(self.tamanho_exibido)
         self.canvas.xview_moveto(0)
         self.canvas.yview_moveto(0)
         self.desenhar_caixas()
@@ -143,7 +105,7 @@ class EditorRecortes(tk.Toplevel):
     def desenhar_caixas(self):
         self.canvas.delete("selecao")
         sx, sy = self.tamanho_exibido[0] / self.imagem.width, self.tamanho_exibido[1] / self.imagem.height
-        for campo, cor in zip(CAMPOS_RECORTE, CORES):
+        for campo, cor in zip(CAMPOS_RECORTE, CORES, strict=True):
             if campo in self.caixas:
                 x1, y1, x2, y2 = self.caixas[campo]
                 self.canvas.create_rectangle(x1 * sx, y1 * sy, x2 * sx, y2 * sy, outline=cor, width=2, tags="selecao")
@@ -193,11 +155,21 @@ class EditorRecortes(tk.Toplevel):
         completa = all(c in self.caixas for c in CAMPOS_RECORTE)
         self.btn_copiar.configure(state="normal" if completa else "disabled")
         if completa:
-            imagem = montar_recortes(self.imagem, self.caixas)
-            linhas.append(f"\nImagem final: {imagem.width} × {imagem.height} px\nPrévia reduzida; cópia em resolução original.")
-            imagem.thumbnail((240, 280))
-            self.foto_previa = ImageTk.PhotoImage(imagem, master=self)
-            self.preview.configure(image=self.foto_previa, text="")
+            original, caixas = self.imagem, dict(self.caixas)
+            largura = max(c[2] - c[0] for c in caixas.values())
+            altura = sum(c[3] - c[1] for c in caixas.values()) + 12
+            linhas.append(f"\nImagem final: {largura} × {altura} px\nPrévia reduzida; cópia em resolução original.")
+            def preparar():
+                imagem = montar_recortes(original, caixas)
+                imagem.thumbnail((240, 280))
+                return imagem
+            def concluir(imagem):
+                if self.caixas != caixas:
+                    self.atualizar_previa()
+                    return
+                self.foto_previa = ImageTk.PhotoImage(imagem, master=self)
+                self.preview.configure(image=self.foto_previa, text="")
+            self.tarefas.enviar("previa", preparar, concluir)
         else:
             self.preview.configure(image="", text="Marque os três campos para montar a imagem.")
             self.foto_previa = None
@@ -238,6 +210,7 @@ class VisualizadorImagem(tk.Toplevel):
         area.rowconfigure(0, weight=1)
         area.columnconfigure(0, weight=1)
         self.canvas.bind("<MouseWheel>", lambda e: self.canvas.yview_scroll(-int(e.delta / 120), "units"))
+        self.renderizador = ImagemCanvas(self, self.canvas, imagem)
         self.bind("<Escape>", lambda _: self.destroy())
         self.update_idletasks()
         self.renderizar()
@@ -246,7 +219,4 @@ class VisualizadorImagem(tk.Toplevel):
         fator = min(1, max(1, self.canvas.winfo_width()) / self.imagem.width,
                     max(1, self.canvas.winfo_height()) / self.imagem.height) if self.zoom.get() == "Ajustar" else int(self.zoom.get()[:-1]) / 100
         tamanho = tuple(max(1, round(d * fator)) for d in self.imagem.size)
-        self.foto = ImageTk.PhotoImage(self.imagem.resize(tamanho, Image.Resampling.LANCZOS), master=self)
-        self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor="nw", image=self.foto)
-        self.canvas.configure(scrollregion=(0, 0, *tamanho))
+        self.renderizador.solicitar(tamanho)

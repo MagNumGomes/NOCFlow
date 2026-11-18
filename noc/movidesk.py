@@ -7,6 +7,7 @@ import time
 
 from .comunicados import gerar_html
 from .edge_bridge import EdgeBridge, abrir_no_edge
+from .services.evidencias import montar_recortes
 
 LOGGER = logging.getLogger("noc")
 
@@ -175,8 +176,7 @@ class MovideskWorker(threading.Thread):
                         if incidente is None:
                             self.ponte.descartar(anterior)
                             self.pendentes.pop(token, None)
-                    pedido.expira = time.monotonic() + 43200
-                    pedido.ultimo_sinal = time.monotonic()
+                    self.ponte.renovar(pedido, 43200)
                     self.pendentes[pedido.token] = (pedido, None)
                     # Uma reconexão renova o prazo mesmo se o estado anterior já era conectado.
                     self.estado_conexao = "conectando"
@@ -203,6 +203,8 @@ class MovideskWorker(threading.Thread):
         if any(i == incidente and p.expira > time.monotonic() for p, i in self.pendentes.values()):
             self.retomar(operacao, incidente)
             return False
+        if dados.get("_imagem") is not None and dados.get("_recortes"):
+            dados = {**dados, "_imagem": montar_recortes(dados["_imagem"], dados["_recortes"])}
         pedido = self.ponte.criar_pedido({
             "url": f"{self.config.movidesk_url}/Ticket/Create",
             "assunto": " - ".join(v for v in (dados['alerta'], dados.get('servidor') or dados.get('servico', '')) if v),
@@ -234,7 +236,7 @@ class MovideskWorker(threading.Thread):
                 except queue.Empty:
                     continue
                 if tipo == "ok":
-                    pedido.expira = time.monotonic() + self.config.timeout_ticket
+                    self.ponte.renovar(pedido, self.config.timeout_ticket)
                     self.pendentes[pedido.token] = (pedido, incidente)
                     self.eventos.put(("pedido_status", incidente, {"estado": "aguardando",
                         "expira": time.time() + self.config.timeout_ticket,

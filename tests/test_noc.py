@@ -1,21 +1,21 @@
 import json
 import os
-from pathlib import Path
-from dataclasses import replace
 import queue
 import tempfile
 import threading
 import time
 import tkinter as tk
 import unittest
+from dataclasses import replace
+from pathlib import Path
 from unittest.mock import patch
 
 from PIL import Image
 
-from noc.interface import NOCFlow
-from noc.incidentes import CAMPOS_FORMULARIO as CAMPOS
-from noc.configuracao import Config, carregar_config, diretorio_aplicacao
 from noc.comunicados import gerar_html, gerar_html_email, validar_dados
+from noc.configuracao import Config, carregar_config, diretorio_aplicacao
+from noc.incidentes import CAMPOS_FORMULARIO as CAMPOS
+from noc.interface import NOCFlow
 from noc.rascunhos import RascunhoWorker
 
 
@@ -316,6 +316,7 @@ class InterfaceTests(unittest.TestCase):
         self.app.nome_operador.set("  João   D'Ávila  ")
         self.assertEqual(self.app.previa.get("1.0", "1.end"), "João D'Ávila - Equipe NOC")
         self.app.btn_salvar_nome.invoke()
+        self.aguardar(lambda: not self.app.tarefas.callbacks)
         self.assertIn("Nome salvo", self.app.status.get())
         self.assertIn(configuracao_original, arquivo.read_text(encoding="utf-8"))
         self.app.novo_incidente()
@@ -336,9 +337,11 @@ class InterfaceTests(unittest.TestCase):
         self.app.definir_dados(dados_incidente())
         with patch("noc.interface.pyperclip.copy") as copiar:
             self.app.copiar_comunicado("WhatsApp")
+            self.aguardar(lambda: not self.app.tarefas.callbacks)
             self.assertEqual(copiar.call_args.args[0].splitlines()[0], "João D'Ávila - Equipe NOC")
         self.app.nome_operador.set("")
         self.app.btn_salvar_nome.invoke()
+        self.aguardar(lambda: not self.app.tarefas.callbacks)
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(carregar_config(Path(self.pasta.name)).nome_operador, "")
         self.assertEqual(self.app.previa.get("1.0", "1.end"), "Equipe NOC")
@@ -368,10 +371,12 @@ class InterfaceTests(unittest.TestCase):
         self.app.definir_imagem(imagem)
         self.app.canal.set("E-mail")
         self.app.mudar_canal()
+        self.aguardar(lambda: not self.app.tarefas.callbacks)
         self.assertIsNotNone(self.app.miniatura_previa)
         self.assertEqual(len(self.app.previa.image_names()), 1)
         with patch("noc.interface.copiar_html_texto") as copiar_rico, patch("noc.interface.pyperclip.copy") as copiar_texto:
             self.app.copiar_comunicado("E-mail")
+            self.aguardar(lambda: not self.app.tarefas.callbacks)
             copiar_rico.assert_called_once()
             copiar_texto.assert_not_called()
             texto, html, _ = copiar_rico.call_args.args
@@ -435,7 +440,8 @@ class InterfaceTests(unittest.TestCase):
             self.app.escolher_evidencia()
             self.app.preencher_movidesk(novo_formulario=True)
             self.assertTrue(enviar.call_args.args[0][1]["_novo_pedido"])
-            self.assertEqual(enviar.call_args.args[0][1]["_imagem"].size, (80, 42))
+            self.assertIs(enviar.call_args.args[0][1]["_imagem"], imagem)
+            self.assertEqual(enviar.call_args.args[0][1]["_recortes"], self.app.recortes_email)
             self.app.eventos.put(("erro", self.app.operacao[0], "Fim da simulação"))
             self.aguardar(lambda: self.app.operacao is None)
 
@@ -508,8 +514,8 @@ class InterfaceTests(unittest.TestCase):
         self.aguardar(lambda: self.app.vars["ticket"].get() == "456")
 
     def test_fila_filtra_avanca_arquiva_e_desfaz_remocao(self):
-        from noc.incidentes import importar_eventos
         from noc.atendimento import etapa_incidente
+        from noc.incidentes import importar_eventos
         eventos = [{"alerta": "CPU", "servidor": f"host-{n}", "severidade": "Disaster" if n == 3 else "High",
                     "link_zabbix": f"https://zabbix.test/tr_events.php?eventid={n}"} for n in (1, 2, 3)]
         self.app.aplicar_importacao(importar_eventos({"versao": 1, "origem": "zabbix", "eventos": eventos}))
@@ -546,18 +552,19 @@ class InterfaceTests(unittest.TestCase):
         self.app.texto_atualizacao.set("CPU estabilizada em 30% às 15:00.")
         with patch("noc.interface.pyperclip.copy", side_effect=OSError("Clipboard ocupado")):
             self.app.copiar_comunicado("WhatsApp")
+            self.aguardar(lambda: not self.app.tarefas.callbacks)
         self.assertNotIn("copias", self.app.fila.obter()["meta"])
         with patch("noc.interface.pyperclip.copy") as copiar:
             self.app.copiar_comunicado("WhatsApp")
+            self.aguardar(lambda: not self.app.tarefas.callbacks)
             self.assertIn("CPU estabilizada em 30%", copiar.call_args.args[0])
             self.assertIn("Normalização do incidente", copiar.call_args.args[0])
         self.assertEqual(self.app.fila.obter()["meta"]["copias"]["WhatsApp"]["modelo"], "Normalização")
         self.assertIn("Copiado:", self.app.copias_resumo.get())
 
     def test_arquivo_copiado_nao_e_tratado_como_imagem(self):
-        with patch("noc.interface.ImageGrab.grabclipboard", return_value=["arquivo.png"]):
-            with self.assertRaisesRegex(ValueError, "Win\\+Shift\\+S"):
-                self.app.ler_clipboard()
+        with patch("noc.interface.ImageGrab.grabclipboard", return_value=["arquivo.png"]), self.assertRaisesRegex(ValueError, "Win\\+Shift\\+S"):
+            self.app.ler_clipboard()
 
     def test_fechar_durante_ia_nao_espera_rede_nem_aplica_resultado_tardio(self):
         liberar = threading.Event()

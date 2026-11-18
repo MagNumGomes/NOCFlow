@@ -2,6 +2,22 @@
 
 Este documento descreve a implementação atual do aplicativo, os contratos de integração e o processo de manutenção. Para os procedimentos do operador, consulte o [manual de uso](manual.md). A apresentação do projeto está no [README](../README.md).
 
+## Camadas e limites da refatoração
+
+- `noc/domain`: contratos e reconciliação de atendimentos; `noc/services`: preparação de evidências e leitura de perfis; `noc/infra`: persistência, lock, imagens e logging; `noc/ui`: views e tarefas gráficas.
+- `TarefasUI` executa até quatro tarefas locais por controlador, com snapshots e callbacks na thread gráfica. PDF/CSV, perfis, conhecimento, clipboard e miniaturas têm caminhos assíncronos. O canvas descarta resultados de zoom obsoletos. O loop principal processa até 100 eventos/15 ms e uma importação pendente por ciclo.
+- `ServidorLimitado` admite 16 conexões, com timeout de socket de 5 segundos e filas de 128 eventos por pedido. Valida Host/Origin, token único ASCII, Content-Length e Transfer-Encoding; revalida pedidos após ler o corpo. Saturação retorna 429 e timeout de leitura retorna 408. O ciclo da ponte usa `RLock`.
+- Imagens são limitadas antes da decodificação a 16 milhões de pixels por lote importado ou por imagem de rascunho.
+- Escritas atômicas usam temporários únicos no mesmo diretório, flush/fsync e substituição do destino; falhas removem o temporário. `ExclusividadeDados` impede duas instâncias no mesmo diretório de dados.
+- A automação rejeita assuntos e seleções ambíguos, trata categorias literalmente e evita reaplicar serviço por timers tardios. A função injetável mantém auxiliares internos por ser serializada pelo navegador.
+- `build.ps1 -SomentePacote` homologa sem preparar dados do usuário nem criar atalhos.
+
+### Cadastro de destinatários
+
+`services/destinatarios.py` valida empresas únicas e listas de endereços, aceita separadores comuns e remove duplicatas dentro de cada lista. Persiste `{versao: 1, empresas: [{empresa, para, cc}]}` em `.noc_data/destinatarios.json` por escrita atômica. Cadastros inválidos são preservados e bloqueiam edição até correção do arquivo.
+
+`ui/destinatarios_view.py` oferece dropdown de empresas, cadastro/edição/exclusão e cópia independente de Para/Cc, separados por `; `. Carga, gravação e clipboard usam `TarefasUI`; o estado é atualizado após a gravação confirmada. As listas são globais à instalação, independentes do incidente. Não há envio de e-mail nem automação do Outlook. `test_destinatarios.py` cobre persistência, falha de escrita, validação, cópia e CRUD gráfico.
+
 ## Sumário
 
 - [Visão geral](#visão-geral)
@@ -152,9 +168,9 @@ Diretórios locais como `.venv`, `.venv-build`, `build`, `dist`, `.noc_data` e c
 | `regras_operacionais.py` | `avaliar_regra()`, `validar_perfis()` | Avaliação determinística de perfis privados com prioridades e conflitos. |
 | `recorrencia.py` | `analisar_recorrencia()` | Auditoria determinística de alertas recorrentes na fila local. |
 | `relatorios.py` | `diario_bordo()`, `passagem_turno()`, `indicadores()` | Consolidação local de diário, passagem de turno e métricas. |
-| `exportacao_pdf.py` | `exportar_relatorio_pdf()` | Geração local de PDF paginado com ReportLab. |
-| `base_conhecimento.py` | `buscar_conhecimento()` | Busca textual local em procedimentos Markdown/JSON/TXT selecionados. |
-| `assistente_ia.py` | `organizar_relato()`, `consultar_procedimento()`, `resumir_operacao()` | IA de texto opcional com validação de schema e citação de fontes. |
+| `exportacao_pdf.py` | `exportar_pdf()` | Geração local de PDF paginado com ReportLab. |
+| `base_conhecimento.py` | `buscar()` | Busca textual local em procedimentos selecionados. |
+| `assistente_ia.py` | `organizar_relato()`, `responder_com_fontes()` | IA de texto opcional com validação de schema e citação de fontes. |
 | `central_operacional.py` | `CentralOperacional` | Janela dedicada a regras, agenda, conhecimento, relatórios e assistente. |
 | `concorrencia.py` | `disparar_operacao()`, `disparar_assistente()` | Execução assíncrona em threads daemon desacoplada dos widgets Tkinter. |
 
@@ -246,7 +262,7 @@ A **Central operacional** (`central_operacional.py`) isola a gestão de turno em
 
 - **Linha do tempo e follow-up (`historico_atendimento.py`):** cada item mantém `meta.historico` (eventos ordenados com timestamp UTC ISO-8601, tipo, detalhe, autor e fonte) e `meta.acompanhamento` (próxima ação agendada e prazo). `pendente_operacional()` identifica prazos vencidos em atendimentos não arquivados.
 - **Regras operacionais (`regras_operacionais.py`):** carrega perfis privados validados (`versao: 1`), avalia calendários/feriados/janelas de turno, severidade e serviço de forma determinística, detecta conflitos entre regras aplicáveis e calcula prazos de primeiro acionamento e atualização. `NOCFlow.carregar_perfis_operacionais()` faz cache por `(caminho, mtime_ns, tamanho)` para evitar leitura repetida de disco na thread da interface.
-- **Agenda operacional (`agenda_operacional.py`):** mantém rotinas recorrentes (`diaria`, `dias_uteis`, `semanal`, `intervalo_minutos`) com fusos IANA (`zoneinfo`/`tzdata`), calcula o próximo vencimento e registra execuções (`ok`, `alerta`, `falha`) com evidência e operador.
+- **Agenda operacional (`agenda_operacional.py`):** mantém rotinas `única`, `intervalo` e `horários`, com calendário e fusos IANA. Horários inexistentes no DST são ignorados; horários ambíguos usam a primeira ocorrência (`fold=0`), sem duplicação civil.
 - **Base de conhecimento (`base_conhecimento.py`):** lê `indice.json` e arquivos Markdown locais, filtrando apenas documentos com `estado == "validado"` compatíveis com o perfil e serviço do atendimento e ranqueando seções por termos da consulta.
 - **Relatórios, recorrência e PDF (`relatorios.py`, `recorrencia.py`, `exportacao_pdf.py`):** gera diário de bordo, passagem de turno, indicadores JSON, exportação CSV (`utf-8-sig`), auditoria determinística de recorrência por host/alerta (com contagem de tickets distintos e lotes) e relatórios paginados em PDF via ReportLab.
 - **Assistente de IA sob demanda (`assistente_ia.py`):** estrutura relatos livres em sugestões revisáveis por checkbox (`organizar_relato()`) e responde consultas sobre procedimentos exigindo citação de fontes `[id]` (`responder_com_fontes()`).
@@ -409,10 +425,11 @@ O worker inicia operações de forma serial, mas continua processando os retorno
 - Aguarda documento pronto, assunto visível e editor disponível.
 - Interrompe se o assunto já tiver um conteúdo diferente do pedido.
 - Atualiza valores e dispara eventos `input`/`change`.
-- Tenta selecionar tipo/ação interna, categoria, urgência, solicitante (pela tag `Movidesk`), serviço (pela tag de serviço/tecnologia), tempo apontado (`00:03`, preservando tempo contabilizado) e atividade (`Observability`) conforme os controles encontrados.
+- Seleciona e confirma o tipo Interno antes de localizar o editor, que pode ser recriado pela troca de tipo. A confirmação final apenas observa o estado. Não seleciona ação pública/interna. Tenta selecionar categoria, urgência, solicitante (pela tag `Movidesk`), serviço (pela tag de serviço/tecnologia), tempo apontado (`00:03`, preservando tempo contabilizado) e atividade (`Observability`).
 - Suporta seletores nativos, Select2 e Kendo. Consultas Select2 são assíncronas, com timeout de 5 segundos.
 - Preenche Froala, TinyMCE, Kendo, iframe, textarea ou `contenteditable`, mantendo o print da evidência logo abaixo do link do Zabbix.
 - Preserva conteúdo e assinatura existentes e identifica o bloco inserido com `data-nocflow-conteudo="1"` para evitar duplicação.
+- Remove linhas vazias na borda anterior da assinatura e não acrescenta parágrafo separador; ao reposicionar a imagem enviada, remove seu contêiner anterior se ficou vazio.
 
 Categoria, urgência e tipo dependem das opções disponíveis na instância. O preenchimento verifica o valor selecionado após os eventos e retorna o resultado por campo. Conteúdo/título recusados pelo editor geram erro; seleções ausentes ou incompletas são apresentadas como pendências. O relatório descreve a tentativa automática anterior à revisão manual no site.
 
@@ -544,7 +561,7 @@ A versão 1, com um único conjunto de dados/imagem, continua legível. Na carga
 - Alterações de formulário agendam salvamento após 750 ms de inatividade; ações relevantes também solicitam gravações diretamente.
 - O worker serializa o I/O e mantém apenas o snapshot mais recente entre gravações pendentes.
 - Imagens são recodificadas apenas quando o objeto muda, usando um cache de referências do worker.
-- O JSON é escrito em `rascunho.tmp`, seguido de `flush()`, `os.fsync()` e substituição do arquivo de destino.
+- O JSON é escrito em temporário de nome único, seguido de `flush()`, `os.fsync()` e substituição do arquivo de destino.
 - A revisão acompanha a confirmação de salvamento para que um resultado antigo não sinalize dados novos como salvos.
 
 Em falha de carga, o worker tenta copiar o arquivo para `rascunho-invalido-{timestamp}.json`. Se não conseguir preservar o original, o salvamento fica suspenso na sessão. Uma fila presente, porém inválida, gera erro; não é ignorada como se fosse um rascunho antigo.
@@ -570,7 +587,7 @@ A referência operacional de todas as variáveis e faixas está no [manual](manu
 |---|---|---|
 | Recursos distribuídos | Raiz do repositório | Diretório `sys._MEIPASS`, normalmente `_internal`. |
 | `.env` e `.noc_data` | Raiz do repositório | `%LOCALAPPDATA%\NOCFlow`. |
-| Extensão carregada pelo Edge | `edge_extension/` do projeto | Cópia em `%LOCALAPPDATA%\NOCFlow\edge_extension`. |
+| Extensão carregada pelo Edge | Cópia em `.noc_data/edge_extension/` | Cópia em `%LOCALAPPDATA%\NOCFlow\edge_extension`. |
 
 `diretorio_recursos()` resolve os arquivos empacotados; `diretorio_aplicacao()` resolve o local gravável. A mudança do código Python para `noc/` não muda o diretório dos dados da execução por fonte.
 
@@ -591,7 +608,7 @@ As validações estão distribuídas nas fronteiras correspondentes:
 
 Configuração e rascunhos são arquivos locais em texto/JSON; as imagens são codificadas, não criptografadas. Cookies de login permanecem no perfil Edge. Chaves de IA são usadas pelos SDKs Python e não integram os pedidos enviados à extensão.
 
-O logger `noc` grava em `.noc_data/noc.log`, com limite de 1.000.000 bytes e dois backups. Erros das operações aparecem no rodapé e no diálogo **Detalhes**. Chamadas opcionais publicam avisos sem encaminhar corpos brutos de erro HTTP dos provedores à interface.
+O logger `noc` grava em `.noc_data/logs/noc.jsonl`, com limite de 1.000.000 bytes e três backups. Registra thread, localização, tipo de exceção e frames, sem serializar corpos HTTP das exceções. Erros das operações aparecem no rodapé e no diálogo **Detalhes**.
 
 Metadados por incidente incluem:
 
@@ -695,7 +712,7 @@ Os testes de interface precisam de sessão gráfica. O OCR nativo exige Windows 
 | `test_operacao.py` | Regras operacionais, agenda, histórico, relatórios, PDF, base de conhecimento e Central operacional. |
 | `test_recorrencia.py` | Agrupamento e contagem determinística de recorrência na fila. |
 
-`pyproject.toml` habilita no Ruff as regras `E9` e `F`, voltadas a erros sintáticos e problemas como nomes indefinidos/imports sem uso. A formatação completa do projeto não é imposta por essa configuração.
+`pyproject.toml` habilita no Ruff `E9`, `F`, `I`, `B`, `UP` e `SIM`. A formatação completa do projeto não é imposta. `test_resiliencia.py` cobre escrita atômica, lock, limites HTTP/imagens e calendário; testes gráficos e DOM cobrem PDF lento, ambiguidades e JSON do userscript.
 
 ### Verificação do executável
 

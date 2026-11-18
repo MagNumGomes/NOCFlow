@@ -6,7 +6,17 @@ Versão atual dos recursos de fluxo, extensão e interface: **2.2.3**.
 
 Consulte também a [Apresentação do Projeto](../README.md) e a [Arquitetura Técnica](arquitetura.md).
 
+## Destinatários de e-mail por empresa
+
+Em **Comunicar → E-mail**, clique em **Cadastrar**, informe a empresa e os endereços dos campos **Para** e **Cc (com cópia)**. Separe vários e-mails por ponto e vírgula, vírgula ou quebra de linha. Endereços repetidos são removidos dentro de cada lista.
+
+Selecione a empresa no dropdown e use **Copiar Para** para colar no campo Para do e-mail; depois use **Copiar Cc** para colar no campo Cc. Cada botão copia somente sua lista, separada por ponto e vírgula. Campos sem destinatários têm o botão desabilitado.
+
+**Editar** permite alterar o cadastro ou excluí-lo. As empresas são compartilhadas entre os incidentes e persistem localmente em `.noc_data/destinatarios.json` (no executável, dentro de `%LOCALAPPDATA%\NOCFlow`). O cadastro não envia mensagens nem altera a assinatura ou o corpo do e-mail.
+
 ## Sumário
+
+- [Destinatários de e-mail por empresa](#destinatários-de-e-mail-por-empresa)
 
 - [Requisitos](#requisitos)
 - [Instalação e atualização](#instalação-e-atualização)
@@ -55,7 +65,6 @@ No PowerShell, na raiz do repositório:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item .env.example .env
 .\.venv\Scripts\python.exe app_noc.py
 ```
 
@@ -118,7 +127,7 @@ Instale a extensão no mesmo perfil do Edge em que você já utiliza o Zabbix, o
 2. Na página do evento ou lista de problemas do Zabbix, expanda o painel **NOCFlow — Zabbix e Movidesk** e clique em **Enviar ao NOCFlow**.
 3. Na aba **Incidente**, confira os dados preenchidos automaticamente. Se o incidente usar regras específicas de cliente, consulte a **Central operacional** para avaliar o perfil.
 4. Confira a aba **Evidências** (a extensão já anexa a imagem renderizada de *Host / Trigger / Severity* quando enviada da página do evento).
-5. Clique em **Criar ticket**. O Edge abrirá o formulário do Movidesk e preencherá automaticamente título, link + print, tipo/ação interna, categoria, urgência, solicitante/serviço (quando presentes nas tags) e apontamento de horas (`00:03` / `Observability`).
+5. Clique em **Criar ticket**. O Edge abrirá o formulário do Movidesk, selecionará e confirmará o tipo **Interno** antes de preencher título, link + print, categoria, urgência, solicitante/serviço (quando presentes nas tags) e apontamento de horas (`00:03` / `Observability`). A automação não seleciona ação pública/interna. O corpo mantém a assinatura existente e remove linhas vazias extras entre ela e a evidência.
 6. Revise os campos no Movidesk e clique em **Salvar**. O número do protocolo voltará sozinho para o incidente correspondente no NOCFlow.
 7. Na aba **Comunicar**, selecione o canal e o modelo desejado, preencha o acionamento/time responsável se aplicável e copie o comunicado.
 8. Clique em **Próximo** para avançar ao próximo item pendente ou arquive o atendimento concluído.
@@ -179,7 +188,7 @@ Ao clicar em **Criar ticket**, a extensão automatiza o preenchimento no Movides
 5. **Solicitante e Serviço pelas Tags:** quando o evento do Zabbix possui tags de identificação (ex.: `Movidesk` para cliente/solicitante e tag de serviço/tecnologia como `DBA SQL`), a extensão pesquisa nos endpoints do Movidesk e preenche automaticamente os campos **Solicitante** e **Serviço**.
 6. **Apontamento de Horas e Atividade:** preenche automaticamente **Tempo apontado** com `00:03` (preservando o campo *Tempo contabilizado* intacto e abrindo a seção de horas caso esteja recolhida) e seleciona a atividade **Observability**.
 
-Em **Pendências / Atendimento**, você confere o status individual de cada um dos 9 itens (`título`, `descrição`, `tipo/ação interna`, `categoria`, `urgência`, `tempo apontado`, `atividade`, `solicitante` e `serviço`) como **preenchido**, **pendente** ou **não localizado**.
+Em **Pendências / Atendimento**, você confere o status individual de cada um dos 9 itens (`título`, `descrição`, `tipo Interno`, `categoria`, `urgência`, `tempo apontado`, `atividade`, `solicitante` e `serviço`) como **preenchido**, **pendente** ou **não localizado**.
 
 ### Retorno automático do número do ticket
 
@@ -315,7 +324,7 @@ Em **⋯ > Consumo e detalhes**, o operador acompanha:
 | Configurações (`.env`) | `%LOCALAPPDATA%\NOCFlow\.env` | `.env` na raiz do repositório |
 | Fila, imagens, agenda e histórico | `%LOCALAPPDATA%\NOCFlow\.noc_data\rascunho.json` | `.noc_data/rascunho.json` |
 | Domínios Zabbix da extensão | `%LOCALAPPDATA%\NOCFlow\.noc_data\extensao.json` | `.noc_data/extensao.json` |
-| Logs rotativos da aplicação | `%LOCALAPPDATA%\NOCFlow\.noc_data\noc.log` | `.noc_data/noc.log` |
+| Logs rotativos da aplicação | `%LOCALAPPDATA%\NOCFlow\.noc_data\logs\noc.jsonl` | `.noc_data/logs/noc.jsonl` |
 | Pasta da extensão para o Edge | `%LOCALAPPDATA%\NOCFlow\edge_extension` | `.noc_data/edge_extension` (ou `edge_extension/`) |
 
 Para fazer backup completo da sua operação local, feche o aplicativo aguardando **✓ Salvo** e copie o arquivo `.env` e a pasta `.noc_data/`.
