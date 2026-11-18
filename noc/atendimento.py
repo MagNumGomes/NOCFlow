@@ -1,8 +1,9 @@
 """Estado operacional e apresentação dos atendimentos, sem I/O ou widgets."""
 
-from datetime import datetime
 import re
 import unicodedata
+from datetime import datetime
+
 from .historico_atendimento import tem_envio
 
 ETAPAS = ("Recebido", "Em revisão", "Aguardando ticket", "Pronto para comunicar", "Aguardando ciência",

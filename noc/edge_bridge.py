@@ -1,19 +1,22 @@
 """Ponte local entre o aplicativo e a extensão instalada no Edge do usuário."""
 
-from dataclasses import dataclass, field
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import contextlib
 import json
 import os
-from pathlib import Path
 import queue
+import re
 import secrets
 import subprocess
 import threading
 import time
-from urllib.parse import urlsplit, parse_qs
+from dataclasses import dataclass, field
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from .configuracao import diretorio_recursos, url_valida
-from .incidentes import importar_eventos, MAX_IMPORTACAO
+from .incidentes import MAX_IMPORTACAO, importar_eventos
+from .infra.persistencia import escrever_bytes, escrever_texto
 
 PORTA_EDGE = 18764
 ARQUIVOS_EXTENSAO = ("manifest.json", "background.js", "bridge.js", "ticket.js", "preencher.js", "movidesk.js", "zabbix.js", "coletor.js", "popup.html", "popup.css", "popup.js", "whatsapp.js", "vendor/html2canvas.min.js", "vendor/LICENSE.html2canvas")
@@ -61,7 +64,7 @@ def preparar_extensao(diretorio):
     dominios = list(dict.fromkeys(url.rstrip("/") for url in dominios))
     configuracao.parent.mkdir(parents=True, exist_ok=True)
     if not configuracao.exists():
-        configuracao.write_text(json.dumps({"zabbix_origens": dominios}, indent=2), encoding="utf-8")
+        escrever_texto(configuracao, json.dumps({"zabbix_origens": dominios}, indent=2))
     destino.mkdir(parents=True, exist_ok=True)
     for nome in ARQUIVOS_EXTENSAO:
         arquivo = origem / nome
@@ -80,7 +83,7 @@ def preparar_extensao(diretorio):
             linhas = conteudo.decode("utf-8").splitlines()
             conteudo = ("\n".join("const ZABBIX = new Set(" + json.dumps(dominios) + ");" if linha.startswith("const ZABBIX = new Set(") else linha for linha in linhas) + "\n").encode("utf-8")
         if not alvo.exists() or alvo.read_bytes() != conteudo:
-            alvo.write_bytes(conteudo)
+            escrever_bytes(alvo, conteudo)
     return destino
 
 
@@ -89,24 +92,59 @@ class Pedido:
     token: str
     dados: dict
     expira: float
-    eventos: queue.Queue = field(default_factory=queue.Queue)
+    eventos: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=128))
     conectado: threading.Event = field(default_factory=threading.Event)
     ultimo_sinal: float = field(default_factory=time.monotonic)
 
 
+class ServidorLimitado(ThreadingHTTPServer):
+    """Limita conexões inclusive antes de o cliente enviar os headers."""
+
+    daemon_threads = True
+
+    def __init__(self, endereco, handler, timeout, max_conexoes):
+        self.vagas = threading.BoundedSemaphore(max_conexoes)
+        self.timeout_cliente = timeout
+        super().__init__(endereco, handler)
+
+    def process_request(self, request, client_address):
+        if not self.vagas.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        request.settimeout(self.timeout_cliente)
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self.vagas.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.vagas.release()
+
+
 class EdgeBridge:
-    def __init__(self, porta=PORTA_EDGE):
+    def __init__(self, porta: int = PORTA_EDGE, timeout_leitura: float = 5, max_conexoes: int = 16):
         self.porta = porta
         self.servidor = None
         self.thread = None
         self.pedidos = {}
         self.lock = threading.Lock()
+        self.ciclo = threading.RLock()
+        self.timeout_leitura = timeout_leitura
+        self.max_conexoes = max_conexoes
 
     @property
     def url(self):
         return f"http://127.0.0.1:{self.porta}"
 
-    def iniciar(self):
+    def iniciar(self) -> None:
+        with self.ciclo:
+            self._iniciar()
+
+    def _iniciar(self):
         if self.servidor:
             return
         ponte = self
@@ -125,13 +163,16 @@ class EdgeBridge:
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
                 self.end_headers()
-                try:
+                with contextlib.suppress(BrokenPipeError, ConnectionResetError):
                     self.wfile.write(corpo)
-                except (BrokenPipeError, ConnectionResetError):
-                    pass
 
             def pedido(self, prefixo):
-                if self.headers.get("Host") != f"127.0.0.1:{ponte.porta}":
+                if self.headers.get_all("Host") != [f"127.0.0.1:{ponte.porta}"]:
+                    return None
+                origens = self.headers.get_all("Origin", [])
+                # Service workers podem omitir Origin. Token continua obrigatório.
+                if len(origens) > 1 or (origens and origens[0] != ponte.url and
+                        not re.fullmatch(r"chrome-extension://[a-p]{32}", origens[0])):
                     return None
                 if not self.path.startswith(prefixo):
                     return None
@@ -141,6 +182,11 @@ class EdgeBridge:
                     if pedido and pedido.expira > time.monotonic():
                         return pedido
                 return None
+
+            def autorizado(self, pedido):
+                tokens = self.headers.get_all("X-NOC-Token", [])
+                return bool(pedido and len(tokens) == 1 and tokens[0].isascii()
+                            and secrets.compare_digest(tokens[0], pedido.token))
 
             def do_GET(self):
                 if self.path.startswith("/request/"):
@@ -158,7 +204,7 @@ Instale a extensão no mesmo perfil do Edge em que você usa o Movidesk e tente 
 </html>""", "text/html; charset=utf-8")
                     return
                 pedido = self.pedido("/api/request/")
-                if pedido and secrets.compare_digest(self.headers.get("X-NOC-Token", ""), pedido.token):
+                if self.autorizado(pedido):
                     pedido.conectado.set()
                     self.responder(200, json.dumps(pedido.dados, ensure_ascii=False))
                 else:
@@ -166,15 +212,23 @@ Instale a extensão no mesmo perfil do Edge em que você usa o Movidesk e tente 
 
             def do_POST(self):
                 pedido = self.pedido("/api/result/")
-                if not pedido or not secrets.compare_digest(self.headers.get("X-NOC-Token", ""), pedido.token):
+                if not self.autorizado(pedido):
                     self.responder(404, '{"erro":"Pedido expirado ou desconhecido."}')
                     return
                 try:
-                    tamanho = int(self.headers.get("Content-Length", "0"))
+                    comprimentos = self.headers.get_all("Content-Length", [])
+                    if len(comprimentos) != 1 or self.headers.get("Transfer-Encoding"):
+                        raise ValueError()
+                    if not re.fullmatch(r"[0-9]{1,10}", comprimentos[0]):
+                        raise ValueError()
+                    tamanho = int(comprimentos[0])
                     limite = MAX_IMPORTACAO if pedido.dados.get("tipo") == "conectar" else 8192
                     if not 0 < tamanho <= limite or self.headers.get_content_type() != "application/json":
                         raise ValueError()
-                    evento = json.loads(self.rfile.read(tamanho))
+                    corpo = self.rfile.read(tamanho)
+                    if len(corpo) != tamanho:
+                        raise ValueError()
+                    evento = json.loads(corpo)
                     tipo = evento.get("tipo")
                     if tipo == "importar" and pedido.dados.get("tipo") == "conectar":
                         mensagem = importar_eventos(evento.get("payload"))
@@ -204,15 +258,23 @@ Instale a extensão no mesmo perfil do Edge em que você usa o Movidesk e tente 
                             mensagem = {"mensagem": mensagem, "campos": campos}
                     else:
                         raise ValueError()
-                    pedido.conectado.set()
-                    pedido.ultimo_sinal = time.monotonic()
-                    pedido.eventos.put((tipo, mensagem))
+                    with ponte.lock:
+                        if ponte.pedidos.get(pedido.token) is not pedido or pedido.expira <= time.monotonic():
+                            self.responder(404, '{"erro":"Pedido expirado ou desconhecido."}')
+                            return
+                        pedido.eventos.put_nowait((tipo, mensagem))
+                        pedido.conectado.set()
+                        pedido.ultimo_sinal = time.monotonic()
                     self.responder(200, '{"ok":true}')
+                except queue.Full:
+                    self.responder(429, '{"erro":"Fila ocupada. Tente novamente."}')
+                except (TimeoutError, ConnectionError):
+                    self.responder(408, '{"erro":"Corpo incompleto ou tempo de leitura excedido."}')
                 except (ValueError, TypeError, AttributeError):
                     self.responder(400, '{"erro":"Evento inválido."}')
 
         try:
-            self.servidor = ThreadingHTTPServer(("127.0.0.1", self.porta), Handler)
+            self.servidor = ServidorLimitado(("127.0.0.1", self.porta), Handler, self.timeout_leitura, self.max_conexoes)
         except OSError as exc:
             raise OSError(f"A porta local {self.porta} está em uso. Feche outra instância do NOCFlow e tente novamente.") from exc
         self.servidor.daemon_threads = True
@@ -220,18 +282,29 @@ Instale a extensão no mesmo perfil do Edge em que você usa o Movidesk e tente 
         self.thread = threading.Thread(target=self.servidor.serve_forever, name="noc-edge-http", daemon=True)
         self.thread.start()
 
-    def criar_pedido(self, dados, segundos):
-        self.iniciar()
-        pedido = Pedido(secrets.token_urlsafe(32), dados, time.monotonic() + segundos)
+    def criar_pedido(self, dados: dict, segundos: float) -> Pedido:
+        with self.ciclo:
+            self.iniciar()
+            pedido = Pedido(secrets.token_urlsafe(32), dados, time.monotonic() + segundos)
+            with self.lock:
+                self.pedidos[pedido.token] = pedido
+            return pedido
+
+    def renovar(self, pedido: Pedido, segundos: float) -> None:
         with self.lock:
-            self.pedidos[pedido.token] = pedido
-        return pedido
+            if self.pedidos.get(pedido.token) is pedido:
+                pedido.expira = time.monotonic() + segundos
+                pedido.ultimo_sinal = time.monotonic()
 
     def descartar(self, pedido):
         with self.lock:
             self.pedidos.pop(pedido.token, None)
 
-    def fechar(self):
+    def fechar(self) -> None:
+        with self.ciclo:
+            self._fechar()
+
+    def _fechar(self):
         with self.lock:
             self.pedidos.clear()
         if self.servidor:

@@ -1,21 +1,20 @@
 """Integração real da extensão com cookies preexistentes e servidor local."""
 
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
-from pathlib import Path
 import queue
 import shutil
 import tempfile
 import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
+from noc.configuracao import Config
 from noc.edge_bridge import EdgeBridge
 from noc.incidentes import CAMPOS_FORMULARIO as CAMPOS
-from noc.configuracao import Config
 from noc.movidesk import MovideskWorker
-
 
 FORMULARIO = b"""<html><body><input id="TicketSubject">
 <input type="radio" name="TicketType" id="publico" checked><label for="publico">Publico</label>
@@ -316,6 +315,7 @@ class PreenchimentoDOMTests(unittest.TestCase):
                 page.evaluate("Object.defineProperty(navigator, 'clipboard', {value: {writeText: async texto => {window.copiado = texto;}}})")
                 page.add_script_tag(content=(raiz / "edge_extension/movidesk.js").read_text(encoding="utf-8"))
                 page.locator("#nocflow-movidesk-utilitarios summary").click()
+                self.assertEqual(page.get_by_role("button", name="Copiar link", exact=True).count(), 0)
                 page.get_by_role("button", name="Copiar template", exact=True).click()
                 self.assertEqual(page.evaluate("window.copiado"), "123456\nCPU - host\nhttps://empresa.movidesk.com/Ticket/Edit/123456")
             finally:

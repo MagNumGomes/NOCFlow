@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NOCFlow - Zabbix - Local
 // @namespace    nocflow
-// @version      2.1.0
+// @version      2.2.3
 // @description  Coleta local de eventos, seleção em lote e imagens sob demanda
 // @match        https://zabbix.example.com/*
 // @match        https://zabbix-secondary.example.com/*
@@ -12,6 +12,12 @@
 // Gerado por gerar_userscripts.py; edite as fontes em edge_extension/.
 /* Coletor compartilhado pela extensão, userscript e fixtures de navegador. */
 (() => {
+  const seletores = Object.freeze({
+    linhas: "tr", tabelas: "table", links: "a[href]", tags: ".tag",
+    nomeTag: ".tag-name", valorTag: ".tag-value",
+    selecionados: 'tbody input[type="checkbox"]:checked',
+    caixas: 'tbody input[type="checkbox"]'
+  });
   const campos = ["alerta", "servidor", "severidade", "situacao", "horario"];
   const normalizar = texto => (texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ").trim().replace(/:$/, "").toLowerCase();
@@ -38,7 +44,7 @@
     } catch { return null; }
   }
   function linhasRotuladas(doc) {
-    return Array.from(doc.querySelectorAll("tr")).flatMap(linha => {
+    return Array.from(doc.querySelectorAll(seletores.linhas)).flatMap(linha => {
       const celulas = Array.from(linha.cells);
       if (celulas.length !== 2) return [];
       const campo = rotulos[normalizar(texto(celulas[0]))];
@@ -56,7 +62,7 @@
     }
     // Alguns layouts mostram Time como cabeçalho na tabela de eventos.
     if (!dados.horario) {
-      const candidatos = Array.from(doc.querySelectorAll("tr")).filter(l =>
+      const candidatos = Array.from(doc.querySelectorAll(seletores.linhas)).filter(l =>
         Array.from(l.querySelectorAll("a[href]")).some(a => urlEvento(a.getAttribute("href"), href)?.searchParams.get("eventid") === url.searchParams.get("eventid")));
       const horas = [...new Set(candidatos.flatMap(l => {
         const cabecalho = l.closest("table")?.querySelector("thead tr");
@@ -66,31 +72,84 @@
       if (horas.length === 1) dados.horario = horas[0];
     }
     const tags = [];
-    for (const tr of doc.querySelectorAll("tr")) {
+    for (const tr of doc.querySelectorAll(seletores.linhas)) {
       if (tr.cells.length !== 2 || normalizar(texto(tr.cells[0])) !== "tags") continue;
-      const blocos = Array.from(tr.cells[1].querySelectorAll(".tag"));
+      const blocos = Array.from(tr.cells[1].querySelectorAll(seletores.tags));
       const valores = blocos.length ? blocos.map(bloco => {
-        const nome = texto(bloco.querySelector(".tag-name")).trim();
-        const valor = texto(bloco.querySelector(".tag-value")).trim();
+        const nome = texto(bloco.querySelector(seletores.nomeTag)).trim();
+        const valor = texto(bloco.querySelector(seletores.valorTag)).trim();
         if (nome || valor) return `${nome}: ${valor}`.replace(/^:\s*/, "").replace(/:\s*$/, "").trim();
         return texto(bloco).trim();
       }) : texto(tr.cells[1]).split("\n").map(valor => valor.trim()).filter(Boolean);
       for (const valor of valores) if (valor && !tags.includes(valor)) tags.push(valor);
     }
-    function tag(nome) {
+    function normalizarServico(valor) {
+      const termo = normalizar(valor).replace(/^dba\s+/, "");
+      const nomes = {
+        sql: "SQL Server", "sql server": "SQL Server", sqlserver: "SQL Server", mssql: "SQL Server",
+        mysql: "MySQL", oracle: "Oracle", postgre: "PostgreSQL", postgres: "PostgreSQL", postgresql: "PostgreSQL",
+        mongo: "MongoDB", mongodb: "MongoDB", redis: "Redis"
+      };
+      return nomes[termo] || "";
+    }
+    function tag(...nomes) {
+      const alvos = new Set(nomes.map(normalizar));
       const unicos = new Map();
-      for (const t of tags.filter(t => normalizar(t.split(":")[0]) === nome)) {
+      for (const t of tags.filter(t => alvos.has(normalizar(t.split(":")[0])))) {
         const valor = t.slice(t.indexOf(":") + 1).trim();
-        if (valor && !unicos.has(normalizar(valor))) unicos.set(normalizar(valor), valor);
+        const chave = normalizar(normalizarServico(valor) || valor);
+        if (valor && !unicos.has(chave)) unicos.set(chave, normalizarServico(valor) || valor);
       }
       const valores = [...unicos.values()];
       return valores.length === 1 ? valores[0] : "";
     }
-    return {...dados, tags: tags.join("\n"), solicitante: tag("movidesk"), servico: tag("dataside"), link_zabbix: url.href, eventid: url.searchParams.get("eventid")};
+    function tagServico() {
+      const especificos = new Map();
+      for (const t of tags) {
+        if (!t.includes(":")) continue;
+        const chave = normalizar(t.split(":")[0]);
+        if (chave === "movidesk") continue;
+        const canonico = normalizarServico(t.slice(t.indexOf(":") + 1));
+        if (canonico) especificos.set(normalizar(canonico), canonico);
+      }
+      if (especificos.size === 1) return [...especificos.values()][0];
+      if (especificos.size > 1) {
+        const textoContexto = normalizar(`${dados.alerta} ${dados.servidor}`);
+        const pistas = [
+          ["SQL Server", /\b(?:mssql|sql\s*server|sqlserver)\b/],
+          ["MySQL", /\b(?:mysql|mariadb)\b/],
+          ["PostgreSQL", /\b(?:postgre|postgres|postgresql)\b/],
+          ["MongoDB", /\b(?:mongo|mongodb)\b/],
+          ["Oracle", /\boracle\b/],
+          ["Redis", /\bredis\b/]
+        ];
+        const correspondentes = pistas.filter(([nome, regex]) => especificos.has(normalizar(nome)) && regex.test(textoContexto));
+        if (correspondentes.length === 1) return correspondentes[0][0];
+        if (/\bsql\b/.test(textoContexto) && !/\b(?:mysql|postgre|postgres)\b/.test(textoContexto) && especificos.has("sql server")) {
+          return "SQL Server";
+        }
+        return "";
+      }
+      const rotulado = tag("servico", "service", "equipe", "time", "fila");
+      if (rotulado) return rotulado;
+      const padrao = /^(?:dba\b|nosql$|noc$|cloud\b|infra(?:estrutura)?\b|redes?\b|network\b|seguranca\b|security\b|backup\b|linux\b|windows\b|storage\b|virtualizacao\b|devops\b|sre\b|observability\b|monitoramento\b)/i;
+      const unicos = new Map();
+      for (const t of tags) {
+        if (!t.includes(":")) continue;
+        const chave = normalizar(t.split(":")[0]);
+        const valor = t.slice(t.indexOf(":") + 1).trim();
+        if (chave !== "movidesk" && padrao.test(normalizar(valor)) && !unicos.has(normalizar(valor))) {
+          unicos.set(normalizar(valor), valor);
+        }
+      }
+      const valores = [...unicos.values()];
+      return valores.length === 1 ? valores[0] : "";
+    }
+    return {...dados, tags: tags.join("\n"), solicitante: tag("movidesk"), servico: tagServico(), link_zabbix: url.href, eventid: url.searchParams.get("eventid")};
   }
   function selecionados(doc, href) {
     const eventos = new Map();
-    for (const checkbox of doc.querySelectorAll('tbody input[type="checkbox"]:checked')) {
+    for (const checkbox of doc.querySelectorAll(seletores.selecionados)) {
       const linha = checkbox.closest("tr");
       const url = Array.from(linha?.querySelectorAll("a[href]") || []).map(a => urlEvento(a.getAttribute("href"), href)).find(Boolean);
       if (!url) continue;
@@ -129,14 +188,14 @@
   }
   function selecionar(doc, href, quantidade) {
     if (!Number.isInteger(quantidade) || quantidade < 1 || quantidade > 100) throw new Error("Informe um número inteiro de 1 a 100.");
-    const caixas = Array.from(doc.querySelectorAll('tbody input[type="checkbox"]')).filter(c =>
+    const caixas = Array.from(doc.querySelectorAll(seletores.caixas)).filter(c =>
       !c.disabled && Array.from(c.closest("tr")?.querySelectorAll("a[href]") || []).some(a => urlEvento(a.getAttribute("href"), href)));
     for (const caixa of caixas.slice(0, quantidade)) if (!caixa.checked) caixa.click();
     return Math.min(quantidade, caixas.length);
   }
   function numeroChamado(doc) {
     // Procura somente no histórico de reconhecimentos, nunca em todos os números da página.
-    const tabelas = Array.from(doc.querySelectorAll("table")).filter(t => {
+    const tabelas = Array.from(doc.querySelectorAll(seletores.tabelas)).filter(t => {
       const cabecalho = normalizar(texto(t.querySelector("thead")));
       const contexto = texto(t.previousElementSibling) + " " + texto(t.closest("section, fieldset")?.querySelector("h2, h3, legend"));
       return /acknowledg|reconhec/i.test(cabecalho + " " + t.id + " " + contexto) ||
@@ -303,6 +362,13 @@
     const avisos = dados.eventos.filter(e => e.aviso).length;
     return `${dados.eventos.length} evento(s) enviado(s) à fila do NOCFlow.${avisos ? ` ${avisos} com pendências de coleta; confira no aplicativo.` : ""}`;
   }, true);
+  botao("Copiar dados para NOCFlow", async () => {
+    const dados = await payload(false);
+    const texto = JSON.stringify(dados);
+    if (new TextEncoder().encode(texto).length > 2000000) throw new Error("Lote excede 2 MB. Selecione menos eventos.");
+    await navigator.clipboard.writeText(texto);
+    return `${dados.eventos.length} evento(s) copiado(s). Use Ctrl+I no NOCFlow.`;
+  }, !extensao);
   if (lista) {
     botao("Selecionar primeiras N linhas", async () => {
       const valor = prompt("Quantas linhas selecionar? (1–100)", "4");
@@ -312,7 +378,6 @@
     botao("Copiar links selecionados", async () => navigator.clipboard.writeText(coletor.selecionados(document, location.href).map(e => e.link_zabbix).join("\n")));
     return;
   }
-  botao("Copiar link", async () => navigator.clipboard.writeText(location.href));
   botao("Copiar Trigger - Host", async () => {
     const d = coletor.extrair(document, location.href);
     await navigator.clipboard.writeText(`${d.alerta} - ${d.servidor}`);
@@ -322,7 +387,6 @@
     if (!numero) throw new Error("Chamado não encontrado na tabela de reconhecimentos.");
     await navigator.clipboard.writeText(numero);
   });
-  const template = d => `Prezados,\n\nRecebemos o seguinte alerta:\n\nN° do Ticket criado:\nAlerta: ${d.alerta}\nSeveridade: ${d.severidade}\nServidor: ${d.servidor}\nDados operacionais: ${d.situacao}\nHorário da Falha: ${d.horario}`;
   botao("Copiar imagem Host / Trigger / Severity", async () => navigator.clipboard.write([new ClipboardItem({"image/png": await imagem()})]));
   botao("Copiar link + imagem", async () => {
     const link = document.createElement("a");
@@ -333,11 +397,4 @@
     await copiarComImagem(location.href, cabecalho);
     return "Link e imagem copiados.";
   }, true);
-  botao("Copiar e-mail + imagem", async () => {
-    const texto = template(coletor.extrair(document, location.href));
-    const pre = document.createElement("div");
-    pre.style.whiteSpace = "pre-wrap";
-    pre.textContent = texto;
-    await copiarComImagem(texto, pre);
-  });
 })();

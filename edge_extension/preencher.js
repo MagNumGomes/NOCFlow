@@ -5,20 +5,64 @@ export async function preencherFormulario(dados) {
       return {aguardar: true};
     }
     const normalizar = texto => String(texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const seletores = {
+      formulario: "section.tab-ticket.ticket.active, .tab-pane.active, form.ticket-form, .container-ticket",
+      assunto: 'input#TicketSubject, input.subject:not([type="hidden"]), input[name="Subject"]:not([type="hidden"]), input[id*="Subject" i]:not([type="hidden"]), input[placeholder*="Assunto" i]:not([type="hidden"])',
+      descricao: 'textarea.description, textarea[id*="desc" i], textarea[name*="desc" i]',
+      rico: '.container-text-editor .fr-element, .fr-view[contenteditable="true"], .fr-element[contenteditable="true"]',
+      frame: 'iframe.tox-edit-area__iframe, iframe.k-content',
+      servico: 'input.service, input[name*="Service" i], select[name*="Service" i]'
+    };
+    const visivel = el => Boolean(el.getClientRects().length) && getComputedStyle(el).visibility !== "hidden";
+    const formularios = Array.from(document.querySelectorAll(seletores.formulario)).filter(visivel);
+    const raiz = formularios.length === 1 ? formularios[0] : document;
+    const assuntos = Array.from(raiz.querySelectorAll(seletores.assunto)).filter(visivel);
+    if (assuntos.length > 1) return {erro: "Mais de um formulário visível. Ative somente o ticket que deseja preencher."};
 
-    const assunto = document.querySelector('input#TicketSubject, input.subject:not([type="hidden"]), input[name="Subject"]:not([type="hidden"]), input[id*="Subject" i]:not([type="hidden"]), input[placeholder*="Assunto" i]:not([type="hidden"])') ||
-      Array.from(document.querySelectorAll('input:not([type="hidden"])')).find(el => {
-        const nome = (el.name || el.id || el.placeholder || "").toLowerCase();
-        return /assunto|subject/.test(nome) && el.getClientRects().length;
-      });
+    const assunto = assuntos[0];
 
     const escopo = assunto?.closest("section.tab-ticket, form, .ticket-form, .container-ticket, body") || document;
 
     const jq = window.jQuery || window.$;
-    const textarea = (escopo || document).querySelector('textarea.description, textarea[id*="desc" i], textarea[name*="desc" i]') || document.querySelector('textarea.description, textarea');
-    const frElement = (escopo || document).querySelector('.container-text-editor .fr-element, .fr-view[contenteditable="true"], .fr-element[contenteditable="true"]') || document.querySelector('.fr-element[contenteditable="true"], .fr-view[contenteditable="true"]');
-    const frame = (escopo || document).querySelector('iframe.tox-edit-area__iframe, iframe.k-content, iframe') || document.querySelector('iframe.tox-edit-area__iframe, iframe.k-content, iframe');
-    const body = frame?.contentDocument?.body;
+    const unico = seletor => {
+      const elementos = Array.from(escopo.querySelectorAll(seletor));
+      return elementos.length === 1 ? elementos[0] : null;
+    };
+    const nomeTipo = el => normalizar(el.textContent || el.getAttribute("aria-label")).replace(/^[✓✔\s]+/, "");
+    function controleInterno() {
+      const rotulos = Array.from(escopo.querySelectorAll('label, button, a, [role="tab"], [role="radio"]'))
+        .filter(el => visivel(el) && nomeTipo(el) === "interno");
+      const radios = Array.from(escopo.querySelectorAll('input.ticketTypeOption, input[type="radio"][name="TicketType"]'));
+      const radio = radios.find(el => Array.from(el.labels || []).some(l => nomeTipo(l) === "interno") ||
+        normalizar(el.getAttribute("aria-label")) === "interno");
+      const rotulo = rotulos.find(el => el.control === radio) || (rotulos.length === 1 ? rotulos[0] : null);
+      return {radio: radio || rotulo?.control, rotulo};
+    }
+    function tipoConfirmado() {
+      const {radio, rotulo} = controleInterno();
+      if (radio?.type === "radio") return radio.checked;
+      if (!rotulo) return false;
+      return rotulo.matches('.active, .selected, [aria-selected="true"], [aria-checked="true"]') ||
+        Boolean(rotulo.querySelector('input:checked, .fa-check, .glyphicon-ok, .icon-check')) ||
+        /^[\s]*[✓✔]/.test(rotulo.textContent);
+    }
+    // O tipo deve mudar antes de localizar o editor: o Movidesk pode recriá-lo.
+    const tipoInicial = controleInterno();
+    if (!tipoConfirmado() && (tipoInicial.radio || tipoInicial.rotulo)) {
+      (tipoInicial.rotulo || tipoInicial.radio).click();
+      for (let i = 0; i < 20; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (tipoConfirmado()) break;
+      }
+    }
+    if (dados.exigir_interno && !tipoConfirmado()) {
+      throw new Error("Não foi possível selecionar o tipo Interno. Selecione INTERNO antes de preencher o ticket.");
+    }
+    const textarea = unico(seletores.descricao) || unico("textarea");
+    const frElement = unico(seletores.rico);
+    const frame = unico(seletores.frame);
+    let body;
+    try { body = frame?.contentDocument?.body; } catch { body = null; }
     let froala = (jq ? ((frElement ? jq(frElement).data("froala.editor") : null) || (textarea ? jq(textarea).data("froala.editor") : null)) : null) ||
       Array.from(window.FroalaEditor?.INSTANCES || []).find(editor => editor.el === frElement || editor.$el?.[0] === frElement);
     if (!froala && jq && frElement) {
@@ -27,7 +71,7 @@ export async function preencherFormulario(dados) {
         if (editor?.html?.set && editor?.image?.upload) { froala = editor; break; }
       }
     }
-    const ce = frElement || (escopo || document).querySelector('[contenteditable="true"]');
+    const ce = frElement || unico('[contenteditable="true"]');
 
     if (!assunto || !assunto.getClientRects().length || (!froala && !frElement && !body && !ce && !textarea)) {
       return {aguardar: true};
@@ -44,43 +88,7 @@ export async function preencherFormulario(dados) {
   assunto.dispatchEvent(new Event("input", {bubbles: true}));
   assunto.dispatchEvent(new Event("change", {bubbles: true}));
 
-  // 2. Tipo do ticket: selecionar "INTERNO"
-      // Valores numéricos variam por layout: determine a opção pelo rótulo associado.
-     function interno(seletor, seletorLabel) {
-       const radios = Array.from(escopo.querySelectorAll(seletor));
-       const label = escopo.querySelector(seletorLabel) || Array.from(escopo.querySelectorAll("label")).find(el => normalizar(el.textContent).replace(/^[✓✔?\s]+/, "") === (seletor.includes("ActionType") ? "acao interna" : "interno"));
-       const alvoLabel = label?.control || label?.querySelector('input[type="radio"]');
-       const radio = radios.find(el => el === alvoLabel ||
-         Array.from(el.labels || []).some(l => /^intern[oa]$/.test(normalizar(l.textContent))) ||
-         /^intern[oa]$/.test(normalizar(el.getAttribute("aria-label")))) ||
-         (alvoLabel?.type === "radio" ? alvoLabel : null);
-        if (radio) {
-          if (!radio.checked) {
-            const rotulo = Array.from(radio.labels || []).find(el => el.getClientRects().length);
-            (rotulo || radio).click();
-          }
-         return radio;
-       }
-       if (label) label.click();
-        return null;
-      }
-  try {
-     const radioInterno = interno('input.ticketTypeOption, input[type="radio"][name="TicketType"]', 'label.TicketTypeLabel.internal, label.ticket-type-label.internal');
-     const radioAcaoInterna = interno('input.actionTypeOption, input[type="radio"][name="ActionType"]', 'label.TicketActionTypeLabel.internal, label.labelInternal');
-     const candidatos = Array.from((escopo || document).querySelectorAll("button, a, label, span, li, div[role='tab'], div[role='button']"));
-    const btnInterno = candidatos.find(el => {
-       const t = normalizar(el.textContent).replace(/^[✓✔?\s]+/, "");
-      return t === "interno" && el.getClientRects().length;
-    });
-     if (!radioInterno && btnInterno && !btnInterno.classList.contains("active") && !btnInterno.classList.contains("selected") && btnInterno.getAttribute("aria-selected") !== "true") {
-      btnInterno.click();
-    }
-    const radios = [radioInterno, radioAcaoInterna].filter(Boolean);
-     if (radioInterno) campos.tipo = radios.every(el => el.checked) ? "preenchido" : "pendente";
-     else if (btnInterno) campos.tipo = btnInterno.classList.contains("active") || btnInterno.classList.contains("selected") || btnInterno.getAttribute("aria-selected") === "true" || btnInterno.closest(".active, .selected") ? "preenchido" : "pendente";
-     const acao = candidatos.find(el => normalizar(el.textContent) === "acao interna" && el.getClientRects().length);
-     if (acao && !radioAcaoInterna) acao.click();
-  } catch {}
+   campos.tipo = tipoConfirmado() ? "preenchido" : (tipoInicial.radio || tipoInicial.rotulo ? "pendente" : "nao_localizado");
 
   // 3. Funções para selecionar Categoria e Urgência
   function padroesUrgencia(severidade) {
@@ -118,14 +126,44 @@ export async function preencherFormulario(dados) {
   function tecnologiaServico(tag) {
     const termo = normalizar(tag).replace(/^dba\s+/, "");
     const nomes = {sql: "SQL Server", "sql server": "SQL Server", sqlserver: "SQL Server", mssql: "SQL Server",
-      mysql: "MySQL", oracle: "Oracle", postgres: "PostgreSQL", postgresql: "PostgreSQL",
+      mysql: "MySQL", oracle: "Oracle", postgre: "PostgreSQL", postgres: "PostgreSQL", postgresql: "PostgreSQL",
       mongo: "MongoDB", mongodb: "MongoDB", redis: "Redis"};
     return nomes[termo] || String(tag || "").trim();
   }
 
-  function selecaoVisivel(el) {
-    const grupo = el.closest(".form-group, .mv-field, .mv-input-container, div");
-    return Boolean(grupo && Array.from(grupo.querySelectorAll(".select2-search-choice, .select2-choice, .select2-selection__choice")).some(item => item.getClientRects().length));
+  function resolverServico(dados) {
+    if (dados.servico && String(dados.servico).trim()) {
+      return tecnologiaServico(dados.servico);
+    }
+    const especificos = new Set();
+    for (const linha of String(dados.tags || "").split("\n")) {
+      if (!linha.includes(":")) continue;
+      const chave = normalizar(linha.split(":")[0]);
+      if (chave === "movidesk") continue;
+      const valor = linha.slice(linha.indexOf(":") + 1).trim();
+      const convertido = tecnologiaServico(valor);
+      if (["SQL Server", "MySQL", "Oracle", "PostgreSQL", "MongoDB", "Redis"].includes(convertido)) {
+        especificos.add(convertido);
+      }
+    }
+    if (especificos.size === 1) return [...especificos][0];
+    if (especificos.size > 1) {
+      const textoContexto = normalizar(`${dados.alerta || ""} ${dados.servidor || ""}`);
+      const pistas = [
+        ["SQL Server", /\b(?:mssql|sql\s*server|sqlserver)\b/],
+        ["MySQL", /\b(?:mysql|mariadb)\b/],
+        ["PostgreSQL", /\b(?:postgre|postgres|postgresql)\b/],
+        ["MongoDB", /\b(?:mongo|mongodb)\b/],
+        ["Oracle", /\boracle\b/],
+        ["Redis", /\bredis\b/]
+      ];
+      const correspondentes = pistas.filter(([nome, regex]) => especificos.has(nome) && regex.test(textoContexto));
+      if (correspondentes.length === 1) return correspondentes[0][0];
+      if (/\bsql\b/.test(textoContexto) && !/\b(?:mysql|postgre|postgres)\b/.test(textoContexto) && especificos.has("SQL Server")) {
+        return "SQL Server";
+      }
+    }
+    return "";
   }
 
   async function selecionarSolicitante(elementos, codigo) {
@@ -147,16 +185,22 @@ export async function preencherFormulario(dados) {
       // O código pertence ao contrato/organização; contatos individuais vêm com personType 1.
       const organizacoes = itens.filter(item => item && item.id && item.personType !== 1 && !item.email &&
         (item.personType === 4 || item.personType === 2 || (item.hierarchy || []).length === 2));
-      const escolhido = organizacoes[0];
+       const exatas = organizacoes.filter(item => String(item.code ?? item.Code ?? item.id) === String(codigo));
+       const escolhido = exatas.length === 1 ? exatas[0] : organizacoes.length === 1 ? organizacoes[0] : null;
       if (!escolhido) {
         // Em formulários clonados o contrato já está selecionado e por isso é omitido da busca.
-        if (selecaoVisivel(el)) return true;
+         if (atual && String(atual.code ?? atual.Code ?? atual.id) === String(codigo)) return true;
         continue;
       }
       s2.data(escolhido);
       jq(el).trigger({type: "change", val: escolhido.id, added: escolhido});
       const depois = s2.data?.();
-      if (depois && String(depois.id) === String(escolhido.id)) return true;
+      if (depois && String(depois.id) === String(escolhido.id)) {
+        for (let espera = 0; espera < 15 && Number(jq.active || 0) > 0; espera++) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        return true;
+      }
     }
     return false;
   }
@@ -186,13 +230,14 @@ export async function preencherFormulario(dados) {
         return {...valor, _html: item.html || ""};
       }).filter(item => item.id && item.allowSelection !== false && !item.disabled && !/notActive/.test(item._html));
       const exatos = candidatos.filter(c => normalizar(c.name) === normalizar(termo));
-      const alvo = exatos.find(c => normalizar(c.path) === "database") ||
-        exatos.find(c => !/tempor/.test(normalizar(c.path))) || exatos[0] ||
-        candidatos.find(c => normalizar(`${c.path || ""} ${c.name}`).includes(normalizar(termo)));
+       const preferidos = exatos.filter(c => normalizar(c.path) === "database");
+       const opcoes = preferidos.length ? preferidos : exatos;
+       const alvo = opcoes.length === 1 ? opcoes[0] : null;
       if (!alvo) continue;
-      dadosWidget.setValue({id: alvo.id, name: alvo.name, path: alvo.path || "", allowSelection: true,
+      const valorServico = {id: alvo.id, name: alvo.name, path: alvo.path || "", allowSelection: true,
         allowFinishTicket: alvo.allowFinishTicket !== false, serviceForTicketType: alvo.serviceForTicketType ?? 0,
-        description: alvo.description ?? null, automationMacroId: alvo.automationMacroId ?? null});
+        description: alvo.description ?? null, automationMacroId: alvo.automationMacroId ?? null};
+       dadosWidget.setValue(valorServico);
       const escolhido = dadosWidget.getValue?.();
       if (escolhido && String(escolhido.id) === String(alvo.id)) return true;
     }
@@ -222,7 +267,7 @@ export async function preencherFormulario(dados) {
           }
            const estaticos = listar(Array.isArray(s2.opts?.data) ? s2.opts.data : s2.opts?.data?.results);
           if (Array.isArray(estaticos) && estaticos.length) {
-            for (const p of padroes) {
+             {
               const opcoes = estaticos.filter(item => item && corresponde(item));
               const it = opcoes.length === 1 ? opcoes[0] : null;
               if (it) {
@@ -249,7 +294,7 @@ export async function preencherFormulario(dados) {
               }));
               const processado = typeof ajaxOpts.results === "function" ? ajaxOpts.results(res, 1) : res;
               const items = listar(processado?.results || (Array.isArray(processado) ? processado : []));
-              for (const p of padroes) {
+               {
                 const it = items.filter(item => item && item.id !== null && item.id !== undefined && corresponde(item));
                 const unico = it.length === 1 ? it[0] : null;
                 if (unico) {
@@ -307,8 +352,10 @@ export async function preencherFormulario(dados) {
     return false;
   }
 
-  try {
-    const padroesCat = [new RegExp(`\\b${normalizar(dados.categoria || "Alerta")}\\b`)];
+  async function preencherClassificacao() {
+   try {
+    const categoria = normalizar(dados.categoria || "Alerta").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const padroesCat = [new RegExp(`^${categoria}$`)];
     const padroesUrg = padroesUrgencia(dados.severidade);
     const categorias = localizarCampos('select[name*="Category" i], input[name*="Category" i], select[id*="Category" i], input[id*="Category" i], select[name*="Categoria" i], input[name*="Categoria" i], select[id*="Categoria" i], input[id*="Categoria" i], input.category', ["categoria", "category"]);
     const urgencias = localizarCampos('select[name*="Urgency" i], input[name*="Urgency" i], select[id*="Urgency" i], input[id*="Urgency" i], select[name*="Urgencia" i], input[name*="Urgencia" i], select[id*="Urgencia" i], input[id*="Urgencia" i], select[name*="Severity" i], select[id*="Severity" i], input.urgency', ["urgencia", "urgency", "severidade"]);
@@ -317,23 +364,29 @@ export async function preencherFormulario(dados) {
     if (await selecionarCampo(categorias, padroesCat)) campos.categoria = "preenchido";
     if (await selecionarCampo(urgencias, padroesUrg)) campos.urgencia = "preenchido";
   } catch {}
+  }
+  await preencherClassificacao();
 
   const emSecaoVisivel = el => {
     const secao = el.closest("section");
     return !secao || secao.getClientRects().length > 0;
   };
-  try {
+  async function preencherRelacionamentos() {
+   try {
     if (dados.solicitante) {
       const alvos = localizarCampos('input.clients, input.requester, input.client, input[name*="Client" i], select[name*="Requester" i]', ["solicitante", "cliente"]).filter(emSecaoVisivel);
       campos.solicitante = alvos.length ? "pendente" : "nao_localizado";
       if (await selecionarSolicitante(alvos, String(dados.solicitante).split(/[,;]/)[0].trim())) campos.solicitante = "preenchido";
     }
-    if (dados.servico) {
-      const alvos = localizarCampos('input.service, input[name*="Service" i], select[name*="Service" i]', ["servico"]).filter(emSecaoVisivel);
+    const servicoAlvo = resolverServico(dados);
+    if (servicoAlvo) {
+      const alvos = localizarCampos(seletores.servico, ["servico"]).filter(emSecaoVisivel);
       campos.servico = alvos.length ? "pendente" : "nao_localizado";
-      if (await selecionarServico(alvos, String(dados.servico).trim())) campos.servico = "preenchido";
+      if (await selecionarServico(alvos, servicoAlvo)) campos.servico = "preenchido";
     }
   } catch {}
+  }
+  await preencherRelacionamentos();
 
   // Apontamento inicial: apenas campos da linha de horas, nunca o tempo contabilizado.
   function camposHoras() {
@@ -350,7 +403,8 @@ export async function preencherFormulario(dados) {
     }
     return {tempos: [...new Set(tempos)].filter(el => el.tagName === "INPUT" && el.type !== "hidden" && !el.disabled && !el.readOnly && el.getClientRects().length), atividades: [...new Set(atividades)]};
   }
-  try {
+  async function preencherHoras() {
+   try {
     let horas = camposHoras();
     if (!horas.tempos.length) {
       const abrirHoras = Array.from(escopo.querySelectorAll("button, a, [role='button']")).find(el =>
@@ -381,8 +435,11 @@ export async function preencherFormulario(dados) {
       if (tempo.value === "00:03") campos.tempo_apontado = "preenchido";
     }
   } catch {}
+  }
+  await preencherHoras();
 
   // 4. Editor de Texto Rico (Froala / TinyMCE / Kendo / iframe)
+  async function preencherDescricao() {
   let htmlAtual = "";
   if (froala && typeof froala.html?.get === "function") {
     htmlAtual = froala.html.get() || "";
@@ -399,6 +456,20 @@ export async function preencherFormulario(dados) {
   let htmlFinal = "";
   const conteudoAtual = document.createElement("div");
   conteudoAtual.innerHTML = htmlAtual;
+  const vazio = el => !el.textContent.replace(/[\s\u200b\u00a0]/g, "") &&
+    !el.querySelector?.('img, video, iframe, table, hr') && !el.matches?.('img, video, iframe, table, hr');
+  function limparBorda(el, inicio) {
+    let filho = inicio ? el.firstChild : el.lastChild;
+    while (filho && vazio(filho)) {
+      filho.remove();
+      filho = inicio ? el.firstChild : el.lastChild;
+    }
+    if (filho?.nodeType === Node.ELEMENT_NODE && /^(DIV|P|SPAN)$/.test(filho.tagName)) {
+      limparBorda(filho, inicio);
+      if (inicio) filho.style.marginTop = "0";
+      else filho.style.marginBottom = "0";
+    }
+  }
   const jaPreenchido = Boolean(conteudoAtual.querySelector('[data-nocflow-conteudo="1"]'));
   const bloco = `<div data-nocflow-conteudo="1">${dados.html}</div>`;
   const evidencia = document.createElement("div");
@@ -409,15 +480,17 @@ export async function preencherFormulario(dados) {
     if (!froala?.image?.upload) throw new Error("Editor sem upload de imagem disponível. Anexe o print pelo Movidesk; a imagem base64 não será inserida pois pode quebrar ao salvar.");
     for (const img of imagensUpload) {
       const blob = await (await fetch(img.src)).blob();
-      arquivos.push(new File([blob], "alerta.png", {type: blob.type}));
-      img.remove();
+       arquivos.push(new File([blob], "alerta.png", {type: blob.type}));
+       img.remove();
     }
   }
 
   if (jaPreenchido) {
     htmlFinal = htmlAtual;
   } else if (htmlAtual.trim()) {
-    htmlFinal = `${evidencia.innerHTML}<p><br></p>${htmlAtual}`;
+    limparBorda(evidencia, false);
+    limparBorda(conteudoAtual, true);
+    htmlFinal = `${evidencia.innerHTML}${conteudoAtual.innerHTML}`;
   } else {
     htmlFinal = evidencia.innerHTML;
   }
@@ -537,7 +610,13 @@ export async function preencherFormulario(dados) {
        const caixa = document.createElement("p");
        caixa.setAttribute("data-nocflow-print", "1");
        caixa.style.margin = "0";
-       for (const img of novas) caixa.append(img);
+        for (const img of novas) {
+          const anterior = img.parentElement;
+          img.style.display = "block";
+          img.style.margin = "0";
+          caixa.append(img);
+          if (anterior && anterior !== corpo && vazio(anterior)) anterior.remove();
+        }
        if (bloco && referencia === bloco) {
          const alvo = Array.from(bloco.children).find(item => item.contains(link)) || link;
          alvo.after(caixa);
@@ -560,16 +639,25 @@ export async function preencherFormulario(dados) {
    esperado.innerHTML = dados.html;
    const texto = el => el.textContent.replace(/\s+/g, " ").trim();
    const imagens = Array.from(recebido.querySelectorAll("img")).map(img => img.getAttribute("src"));
-   const confirmouCorpo = preenchido && texto(recebido).includes(texto(esperado)) &&
-      Array.from(esperado.querySelectorAll("img")).every(img => arquivos.length ? imagens.some(src => src && !/^(data:|blob:)/.test(src)) : imagens.includes(img.getAttribute("src")));
+    return preenchido && texto(recebido).includes(texto(esperado)) &&
+       Array.from(esperado.querySelectorAll("img")).every(img => arquivos.length ? imagens.some(src => src && !/^(data:|blob:)/.test(src)) : imagens.includes(img.getAttribute("src")));
+  }
 
-  if (!confirmouCorpo || assunto.value !== dados.assunto) {
+   if (!await preencherDescricao() || assunto.value !== dados.assunto) {
     throw new Error("O formulário não confirmou o preenchimento. Revise a guia aberta.");
   }
    campos.assunto = "preenchido";
    campos.descricao = "preenchido";
-   const confirmarTipo = interno('input.ticketTypeOption, input[type="radio"][name="TicketType"]', 'label.TicketTypeLabel.internal, label.ticket-type-label.internal');
-   if (confirmarTipo) campos.tipo = confirmarTipo.checked ? "preenchido" : "pendente";
+    if (tipoInicial.radio || tipoInicial.rotulo) campos.tipo = tipoConfirmado() ? "preenchido" : "pendente";
+   try {
+     const servicoFinal = resolverServico(dados);
+     if (servicoFinal) {
+       // A última checagem apenas observa: não desfaz uma edição feita durante o upload.
+       const alvosServico = localizarCampos(seletores.servico, ["servico"]).filter(emSecaoVisivel);
+       const confirmado = alvosServico.some(el => normalizar((jq ? jq(el).data()?.getValue?.() : null)?.name) === normalizar(servicoFinal));
+       campos.servico = confirmado ? "preenchido" : "pendente";
+     }
+   } catch {}
    if (dados.exigir_interno && campos.tipo !== "preenchido") {
      throw new Error("Não foi possível confirmar o tipo Interno. Selecione INTERNO antes de salvar o ticket.");
    }

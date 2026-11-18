@@ -14,7 +14,7 @@ def consultar_texto(config, instrucao, entrada, schema, notificar=None):
     conteudo = json.dumps(entrada, ensure_ascii=False)
     if len(conteudo) > 32000:
         raise ValueError("Contexto muito extenso; selecione menos registros (limite de 32 mil caracteres).")
-    from groq import Groq, APIStatusError, APIConnectionError, APITimeoutError
+    from groq import APIConnectionError, APIStatusError, APITimeoutError, Groq
     inicio = time.monotonic()
     try:
         with Groq(api_key=config.groq_api_key, timeout=config.timeout_groq, max_retries=0) as cliente:

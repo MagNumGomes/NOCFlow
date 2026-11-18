@@ -31,6 +31,7 @@ def disparar_assistente(eventos, identificador, tarefa, funcao, ao_concluir):
             resultado = funcao()
             eventos.put((ao_concluir, resultado, None, identificador, tarefa))
         except Exception as exc:
+            LOGGER.exception("Falha no assistente operacional")
             mensagem = str(exc) if isinstance(exc, ValueError) else f"Falha no assistente ({type(exc).__name__})."
             eventos.put((None, None, mensagem, identificador, tarefa))
 

@@ -1,4 +1,4 @@
-param([switch]$SemAtalho, [string]$PastaSaida = "dist")
+param([switch]$SemAtalho, [switch]$SomentePacote, [string]$PastaSaida = "dist")
 
 $ErrorActionPreference = "Stop"
 $raiz = $PSScriptRoot
@@ -50,6 +50,7 @@ if ($processo.ExitCode -ne 0) {
 }
 
 # Inicializa apenas os dados deste usuario; nunca entram no pacote distribuido.
+if (-not $SomentePacote) {
 $dadosUsuario = Join-Path $env:LOCALAPPDATA "NOCFlow"
 New-Item -ItemType Directory -Path $dadosUsuario -Force | Out-Null
 $envUsuario = Join-Path $dadosUsuario ".env"
@@ -76,8 +77,9 @@ if (-not $SemAtalho) {
     $atalho.Save()
     Write-Host "Atalho criado na Area de Trabalho."
 }
+}
 
 Write-Host ""
 Write-Host "Build concluido: $executavel"
-Write-Host "Configuracao e dados: $dadosUsuario"
+if (-not $SomentePacote) { Write-Host "Configuracao e dados: $dadosUsuario" }
 Write-Host "Para distribuir, copie a pasta NOCFlow inteira."

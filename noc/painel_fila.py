@@ -40,7 +40,7 @@ class PainelFila(ttk.Frame):
         area.pack(fill="both", expand=True)
         colunas = ("servidor", "alerta", "severidade", "horario", "etapa", "ticket")
         self.lista = ttk.Treeview(area, columns=colunas, show="headings", height=4, selectmode="browse")
-        for coluna, rotulo, largura in zip(colunas, ("Servidor", "Alerta", "Severidade", "Horário", "Etapa", "Ticket"), (160, 220, 90, 140, 170, 75)):
+        for coluna, rotulo, largura in zip(colunas, ("Servidor", "Alerta", "Severidade", "Horário", "Etapa", "Ticket"), (160, 220, 90, 140, 170, 75), strict=True):
             self.lista.heading(coluna, text=rotulo)
             self.lista.column(coluna, width=largura, minwidth=60, stretch=True)
         vertical = ttk.Scrollbar(area, orient="vertical", command=self.lista.yview)

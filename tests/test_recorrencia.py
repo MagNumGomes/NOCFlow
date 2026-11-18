@@ -1,10 +1,10 @@
 import tempfile
-from pathlib import Path
 import unittest
+from pathlib import Path
 
+from noc.exportacao_pdf import exportar_pdf
 from noc.incidentes import FilaIncidentes
 from noc.recorrencia import analisar_recorrencia, formatar_recorrencia
-from noc.exportacao_pdf import exportar_pdf
 
 
 def item(ticket, alerta="Falha de conexão", **dados):

@@ -1,9 +1,9 @@
 """Interpretação conservadora do OCR e cache limitado por captura."""
 
-from collections import OrderedDict
 import hashlib
 import re
 import unicodedata
+from collections import OrderedDict
 
 from .incidentes import CAMPOS_EVENTO
 

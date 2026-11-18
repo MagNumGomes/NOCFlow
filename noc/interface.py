@@ -1,41 +1,72 @@
 """Interface Tkinter e coordenação dos eventos dos workers."""
 
+import contextlib
+import gc
 import logging
-from dataclasses import replace
-from copy import deepcopy
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
 import queue
 import subprocess
 import time
 import tkinter as tk
+from dataclasses import replace
 from tkinter import messagebox, ttk
 
-from PIL import Image, ImageGrab, ImageTk
 import pyperclip
+from PIL import Image, ImageGrab, ImageTk
 
+from .atendimento import (
+    MODELOS,
+    MODELOS_ABERTURA,
+    ROTULOS_CAMPOS,
+    STATUS_PREENCHIMENTO,
+    agora,
+    etapa_incidente,
+    link_ticket,
+    pendencias_incidente,
+    proxima_acao,
+    ticket_valido,
+)
+from .clipboard_windows import copiar_html_texto, copiar_imagem
+from .comunicados import (
+    gerar_assunto_email,
+    gerar_html_email,
+    gerar_template,
+    validar_dados,
+)
 from .concorrencia import disparar_operacao
-from .edge_bridge import abrir_no_edge, preparar_extensao
-from .tokens_ia import ConsumoIA
-from .recortes_email import CAMPOS_RECORTE, EditorRecortes, VisualizadorImagem, montar_recortes
-from .painel_fila import PainelFila
-from .atendimento import (MODELOS, MODELOS_ABERTURA, ROTULOS_CAMPOS, STATUS_PREENCHIMENTO, agora, etapa_incidente,
-                          link_ticket, pendencias_incidente, proxima_acao, ticket_valido)
-from .incidentes import FilaIncidentes, importar_eventos, CAMPOS_EVENTO, CAMPOS_FORMULARIO as CAMPOS
-from .extracao_local import CacheExtracao
 from .configuracao import carregar_config, diretorio_aplicacao, preparar_config_apis
 from .configuracao import salvar_nome_operador as gravar_nome_operador
-from .comunicados import gerar_assunto_email, gerar_template, validar_dados
-from .clipboard_windows import copiar_imagem
+from .domain.reconciliacao import mesclar_atendimento
+from .edge_bridge import abrir_no_edge, preparar_extensao
 from .extracao import extrair_dados
-from .movidesk import MovideskWorker
-from .rascunhos import RascunhoWorker
+from .extracao_local import CacheExtracao
 from .historico_atendimento import instante, pendente_operacional, registrar_evento
-from .regras_operacionais import avaliar_regras, carregar_perfis
+from .incidentes import CAMPOS_EVENTO, FilaIncidentes, importar_eventos
+from .incidentes import CAMPOS_FORMULARIO as CAMPOS
+from .infra.logging_local import configurar_logging
+from .infra.persistencia import ExclusividadeDados
+from .movidesk import MovideskWorker
+from .painel_fila import PainelFila
+from .rascunhos import RascunhoWorker
+from .recortes_email import (
+    CAMPOS_RECORTE,
+    EditorRecortes,
+    VisualizadorImagem,
+    montar_recortes,
+)
+from .regras_operacionais import avaliar_regras
+from .services.evidencias import preparar_miniatura
+from .services.perfis import ler_perfis
+from .tokens_ia import ConsumoIA
+from .ui.comunicacao_view import montar_comunicacao
+from .ui.evidencias_view import montar_evidencias
+from .ui.tarefas import TarefasUI
 
 
 class NOCFlow:
     def __init__(self, root, config=None):
+        # Objetos Tcl de janelas anteriores devem ser coletados na thread gráfica,
+        # antes de iniciar workers que poderiam disparar o coletor cíclico.
+        gc.collect()
         self.root = root
         self.config = config or carregar_config(diretorio_aplicacao())
         self.eventos = queue.Queue()
@@ -44,6 +75,8 @@ class NOCFlow:
         self.recortes_email = {}
         self.miniatura = None
         self.miniatura_chave = None
+        self.miniatura_previa = None
+        self.miniatura_previa_chave = None
         self.imagem_after = None
         self.operacao = None
         self.sequencia = 0
@@ -63,6 +96,8 @@ class NOCFlow:
         self.estado_conexao = "desconectado"
         self.perfis_operacionais = []
         self.perfis_chave = None
+        self.perfis_arquivo = None
+        self.perfis_consulta = 0
         self.erro_perfis = ""
         self.central = None
         self.ultima_agenda = 0
@@ -99,6 +134,8 @@ class NOCFlow:
         self.root.minsize(600, 520)
         self.root.protocol("WM_DELETE_WINDOW", self.fechar)
         self.montar_interface()
+        self.tarefas = TarefasUI(root, self.exibir_erro)
+        self.destinatarios.carregar()
         for campo, variavel in self.vars.items():
             variavel.trace_add("write", lambda *_, c=campo: self.alterado(c))
         self.nome_operador.trace_add("write", lambda *_: self.atualizar_previews())
@@ -120,10 +157,8 @@ class NOCFlow:
 
     def montar_interface(self):
         estilo = ttk.Style(self.root)
-        try:
+        with contextlib.suppress(tk.TclError):
             estilo.theme_use("clam")
-        except tk.TclError:
-            pass
         self.root.configure(background="#f6f7f9")
         estilo.configure(".", font=("Segoe UI", 10), background="#f6f7f9", foreground="#182230")
         estilo.configure("TButton", padding=(10, 6))
@@ -280,109 +315,9 @@ class NOCFlow:
         ttk.Label(evidencia, textvariable=self.evidencia_resumo, style="Discreto.TLabel").pack(side="left")
         ttk.Button(evidencia, text="Ver evidências", command=self.mostrar_evidencias).pack(side="right")
 
-        escolhas = ttk.Frame(self.pagina_comunicar)
-        escolhas.pack(fill="x", pady=(0, 6))
-        escolhas.columnconfigure((1, 3), weight=1)
-        ttk.Label(escolhas, text="Canal", style="Discreto.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 6))
-        ttk.Label(escolhas, text="Modelo", style="Discreto.TLabel").grid(row=0, column=2, sticky="w", padx=(12, 6))
-        self.seletor_canal = ttk.Combobox(escolhas, textvariable=self.canal,
-                                          values=("WhatsApp", "Teams", "E-mail"), state="readonly", width=14)
-        self.seletor_canal.grid(row=0, column=1, sticky="ew")
-        self.seletor_canal.bind("<<ComboboxSelected>>", self.mudar_canal)
-        self.seletor_modelo = ttk.Combobox(escolhas, textvariable=self.modelo_comunicado, values=MODELOS, state="readonly", width=14)
-        self.seletor_modelo.grid(row=0, column=3, sticky="ew")
-        self.seletor_modelo.bind("<<ComboboxSelected>>", self.mudar_modelo)
-        self.opcoes_canal = ttk.Frame(self.pagina_comunicar)
-        self.opcoes_canal.pack(fill="x")
-        self.campos_canal = {}
-        for canal, campo, rotulo in (("WhatsApp", "acionamento", "Acionamento"),
-                                     ("Teams", "time_resp", "Time responsável")):
-            frame = ttk.Frame(self.opcoes_canal)
-            if canal == "WhatsApp":
-                nome_area = ttk.Frame(frame)
-                nome_area.pack(fill="x", pady=(0, 4))
-                self.nome_compacto = ttk.Frame(nome_area)
-                ttk.Label(self.nome_compacto, textvariable=self.nome_resumo, style="Discreto.TLabel").pack(side="left")
-                ttk.Button(self.nome_compacto, text="Editar nome", style="Compacto.TButton", command=self.editar_nome_operador).pack(side="right")
-                self.linha_nome = ttk.Frame(nome_area)
-                ttk.Label(self.linha_nome, text="Seu nome:", style="Discreto.TLabel").pack(side="left", padx=(0, 6))
-                self.entrada_nome_operador = ttk.Entry(self.linha_nome, textvariable=self.nome_operador)
-                self.entrada_nome_operador.pack(side="left", fill="x", expand=True)
-                self.entrada_nome_operador.bind("<Return>", lambda _: self.salvar_nome_operador())
-                self.btn_salvar_nome = ttk.Button(self.linha_nome, text="Salvar nome", style="Compacto.TButton", command=self.salvar_nome_operador)
-                self.btn_salvar_nome.pack(side="right", padx=(8, 0))
-            linha = ttk.Frame(frame)
-            linha.pack(fill="x", pady=(0, 6))
-            ttk.Label(linha, text=rotulo, style="Discreto.TLabel").pack(side="left", padx=(0, 6))
-            self.entradas[campo] = ttk.Entry(linha, textvariable=self.vars[campo])
-            self.entradas[campo].pack(side="left", fill="x", expand=True)
-            self.campos_canal[canal] = frame
-        email = ttk.Frame(self.opcoes_canal)
-        self.campos_canal["E-mail"] = email
-        email_linha = ttk.Frame(email)
-        email_linha.pack(fill="x", pady=(0, 8))
-        ttk.Entry(email_linha, textvariable=self.assunto_email, state="readonly").pack(
-            side="left", fill="x", expand=True)
-        self.btn_assunto = ttk.Button(email_linha, text="Assunto", style="Compacto.TButton", command=self.copiar_assunto_email)
-        self.btn_assunto.pack(side="right", padx=(8, 0))
-        self.atualizacao_area = ttk.Frame(self.pagina_comunicar)
-        relato = ttk.Frame(self.atualizacao_area)
-        relato.pack(fill="x", pady=(0, 4))
-        ttk.Label(relato, text="Relato", style="Discreto.TLabel").pack(side="left", padx=(0, 6))
-        self.entrada_atualizacao = ttk.Entry(relato, textvariable=self.texto_atualizacao)
-        self.entrada_atualizacao.pack(side="left", fill="x", expand=True)
-        self.acionamento_email = ttk.Frame(self.atualizacao_area)
-        ttk.Label(self.acionamento_email, text="Equipe acionada:", style="Discreto.TLabel").pack(side="left")
-        self.entrada_acionamento_email = ttk.Entry(self.acionamento_email, textvariable=self.vars["acionamento"])
-        self.entrada_acionamento_email.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        montar_comunicacao(self)
 
-        fim_comunicacao = ttk.Frame(self.pagina_comunicar)
-        fim_comunicacao.pack(side="bottom", fill="x", pady=(4, 0))
-        ttk.Button(fim_comunicacao, text="Ampliar prévia", style="Compacto.TButton", command=self.ampliar_previa).pack(side="right", padx=(8, 0))
-        copia_label = ttk.Label(fim_comunicacao, textvariable=self.copias_resumo, style="Discreto.TLabel", wraplength=390)
-        copia_label.pack(side="left", fill="x", expand=True)
-        fim_comunicacao.bind("<Configure>", lambda e: copia_label.configure(wraplength=max(150, e.width - 130)))
-        self.area_previa = ttk.Frame(self.pagina_comunicar)
-        self.area_previa.pack(fill="both", expand=True)
-        self.previa = tk.Text(self.area_previa, height=5, width=1, wrap="word",
-                              font=("Segoe UI", 10), relief="flat", padx=10, pady=8,
-                              background="white", foreground="#182230", state="disabled")
-        barra_previa = ttk.Scrollbar(self.area_previa, orient="vertical", command=self.previa.yview)
-        barra_previa.pack(side="right", fill="y")
-        self.previa.configure(yscrollcommand=barra_previa.set)
-        self.previa.pack(fill="both", expand=True)
-
-        self.area_recortes = ttk.Frame(self.pagina_evidencias)
-        self.area_recortes.pack(fill="x", pady=(0, 6))
-        self.btn_adicionar_print = ttk.Button(self.area_recortes, text="Adicionar print", command=self.capturar_print)
-        self.btn_adicionar_print.pack(side="left", padx=(0, 6))
-        self.btn_ampliar = ttk.Button(self.area_recortes, text="Ampliar", command=self.ampliar_imagem)
-        self.btn_ampliar.pack(side="left", padx=(0, 6))
-        self.btn_recortar_email = ttk.Button(self.area_recortes, text="Recortar print",
-                                             command=self.recortar_imagem_email)
-        self.btn_recortar_email.pack(side="left")
-        copia_imagem = ttk.Frame(self.pagina_evidencias)
-        copia_imagem.pack(fill="x", pady=(0, 6))
-        self.btn_print = ttk.Button(copia_imagem, text="Copiar print", command=self.copiar_print)
-        self.btn_print.pack(side="left", padx=(0, 6))
-        self.btn_imagem_email = ttk.Button(copia_imagem, text="Copiar recorte",
-                                           command=self.copiar_imagem_email)
-        self.btn_imagem_email.pack(side="left")
-        ttk.Label(self.pagina_evidencias, text="Capture com Win+Shift+S e use Adicionar print. Clique na prévia para ampliar.",
-                  style="Discreto.TLabel", wraplength=540).pack(anchor="w")
-        resumo_imagem = ttk.Label(self.pagina_evidencias, textvariable=self.evidencia_resumo, style="Discreto.TLabel")
-        resumo_imagem.pack(side="bottom", anchor="w", pady=(4, 0))
-        destino_imagem = ttk.Frame(self.pagina_evidencias)
-        destino_imagem.pack(side="bottom", fill="x")
-        ttk.Label(destino_imagem, text="Imagem no ticket:", style="Discreto.TLabel").pack(side="left")
-        self.seletor_evidencia = ttk.Combobox(destino_imagem, textvariable=self.evidencia_escolha,
-                                             values=("Print completo", "Recorte"), state="readonly", width=18)
-        self.seletor_evidencia.pack(side="left", padx=8)
-        self.seletor_evidencia.bind("<<ComboboxSelected>>", self.escolher_evidencia)
-        self.preview_imagem = ttk.Label(self.pagina_evidencias, style="Discreto.TLabel", anchor="center")
-        self.preview_imagem.pack(fill="both", expand=True, pady=6)
-        self.preview_imagem.bind("<Button-1>", lambda _: self.ampliar_imagem())
-        self.preview_imagem.bind("<Configure>", self.agendar_miniatura)
+        montar_evidencias(self)
         self.btns_copiar = (self.btn_comunicado, self.btn_assunto)
         self.atualizar_nome_operador()
         self.mudar_canal()
@@ -468,7 +403,20 @@ class NOCFlow:
         barra = ttk.Scrollbar(janela, orient="vertical")
         barra.pack(side="right", fill="y")
         texto = tk.Text(janela, wrap="word", font=("Segoe UI", 11), padx=16, pady=16, yscrollcommand=barra.set)
-        texto.insert("1.0", self.previa.get("1.0", "end-1c"))
+        texto.insert("1.0", self.previa.get("1.0", "end-1c").rstrip("\n"))
+        if self.canal.get() == "E-mail":
+            imagem = self.imagem
+            caixas = dict(self.recortes_email) if self.evidencia_escolha.get() == "Recorte" else None
+            if imagem is not None:
+                def mostrar(copia):
+                    if not janela.winfo_exists():
+                        return
+                    janela.foto_evidencia = ImageTk.PhotoImage(copia, master=janela)
+                    texto.configure(state="normal")
+                    texto.insert("end", "\n\n")
+                    texto.image_create("end", image=janela.foto_evidencia)
+                    texto.configure(state="disabled")
+                self.tarefas.enviar("ampliar_previa", lambda: preparar_miniatura(imagem, (620, 320), caixas), mostrar)
         texto.configure(state="disabled")
         texto.pack(fill="both", expand=True)
         barra.configure(command=texto.yview)
@@ -486,6 +434,7 @@ class NOCFlow:
         self.revisao += 1
         self.guardar_incidente()
         self.atualizar_resumo_evidencia()
+        self.atualizar_previews()
         self.agendar_salvamento()
 
     def atualizar_resumo_evidencia(self):
@@ -664,34 +613,7 @@ class NOCFlow:
                           (i["meta"].get("instancia"), i["meta"].get("eventid")) ==
                           (meta.get("instancia"), meta["eventid"])), None)
         if existente:
-            for campo, valor in item["dados"].items():
-                if not existente["dados"].get(campo):
-                    existente["dados"][campo] = valor
-                elif valor and valor != existente["dados"][campo] and campo in (*CAMPOS_EVENTO, "link_zabbix"):
-                    existente["meta"].setdefault("atualizacoes", {})[campo] = valor
-                elif campo == "ticket" and ticket_valido(valor) and valor != existente["dados"][campo]:
-                    existente["meta"]["ticket_conflito"] = {"ticket": valor, "url": link_ticket(self.config.movidesk_url, valor)}
-            if existente["imagem"] is None:
-                existente["imagem"] = item["imagem"]
-                existente["meta"]["recortes"] = meta.get("recortes", {})
-                existente["meta"]["evidencia_ticket"] = meta.get("evidencia_ticket", "original")
-            for chave in ("pedido", "preenchimento", "copias", "arquivado", "arquivado_em", "em_revisao"):
-                if chave in meta:
-                    existente["meta"].setdefault(chave, deepcopy(meta[chave]))
-            for chave in ("acompanhamento", "regra", "coordenacao", "ultima_ia_relato", "recebido_em"):
-                if chave in meta:
-                    existente["meta"].setdefault(chave, deepcopy(meta[chave]))
-            historico = {e["id"]: e for e in existente["meta"].get("historico", [])}
-            historico.update({e["id"]: deepcopy(e) for e in meta.get("historico", [])})
-            existente["meta"]["historico"] = sorted(historico.values(), key=lambda e: instante(e["em"]))
-            for chave in ("referencias", "relacionados"):
-                valores = existente["meta"].setdefault(chave, [])
-                for valor in meta.get(chave, []):
-                    if valor not in valores:
-                        valores.append(deepcopy(valor))
-            if not existente["meta"].get("comunicacao", {}).get("texto") and meta.get("comunicacao"):
-                existente["meta"]["comunicacao"] = deepcopy(meta["comunicacao"])
-            existente["meta"]["campos_revisados"] = sorted(set(meta.get("campos_revisados", [])) | set(existente["meta"].get("campos_revisados", [])))
+            mesclar_atendimento(existente, item, CAMPOS_EVENTO, self.config.movidesk_url)
             self.vinculos_retorno[item["id"]] = existente["id"]
             self.movidesk.comandos.put((None, {"_transferir_incidente": item["id"], "_destino": existente["id"]}))
             item = existente
@@ -714,10 +636,7 @@ class NOCFlow:
     def importar_clipboard(self):
         if self.operacao or self.carregando or self.fechando:
             return
-        try:
-            self.aplicar_importacao(importar_eventos(pyperclip.paste()))
-        except Exception as exc:
-            self.exibir_erro(str(exc))
+        self.executar("importacao", "Importando dados…", lambda: importar_eventos(pyperclip.paste()))
 
     def aplicar_importacao(self, eventos, selecionar=True):
         inicio = time.monotonic()
@@ -822,6 +741,25 @@ class NOCFlow:
         self.previa.insert("1.0", gerar_template(dados, self.canal.get(), self.config.movidesk_url,
                                                 self.nome_operador.get(), self.modelo_comunicado.get(),
                                                 self.texto_atualizacao.get()))
+        if self.canal.get() == "E-mail":
+            if self.imagem is not None:
+                chave = (id(self.imagem), self.evidencia_escolha.get(), tuple(sorted(self.recortes_email.items())))
+                if chave != self.miniatura_previa_chave:
+                    imagem = self.imagem
+                    caixas = dict(self.recortes_email) if self.evidencia_escolha.get() == "Recorte" else None
+                    def concluir(copia):
+                        atual = (id(self.imagem), self.evidencia_escolha.get(), tuple(sorted(self.recortes_email.items())))
+                        if atual == chave:
+                            self.miniatura_previa = ImageTk.PhotoImage(copia, master=self.root)
+                            self.miniatura_previa_chave = chave
+                        self.atualizar_previews()
+                    self.tarefas.enviar("miniatura_email", lambda: preparar_miniatura(imagem, (480, 180), caixas), concluir)
+                if self.miniatura_previa is not None and chave == self.miniatura_previa_chave:
+                    self.previa.insert("end", "\n\n")
+                    self.previa.image_create("end", image=self.miniatura_previa)
+            else:
+                self.miniatura_previa = None
+                self.miniatura_previa_chave = None
         self.previa.configure(state="disabled")
         item = self.fila.obter()
         copia = item["meta"].get("copias", {}).get(self.canal.get(), {}) if item else {}
@@ -831,15 +769,14 @@ class NOCFlow:
     def salvar_nome_operador(self):
         if self.carregando or self.fechando:
             return
-        try:
-            nome = gravar_nome_operador(self.config.diretorio, self.nome_operador.get())
+        diretorio, nome = self.config.diretorio, self.nome_operador.get()
+        def concluir(nome):
             self.config = replace(self.config, nome_operador=nome)
             self.nome_operador.set(nome)
             self.nome_em_edicao = False
             self.atualizar_nome_operador()
             self.informar("Nome salvo para os próximos atendimentos.")
-        except Exception as exc:
-            self.exibir_erro(f"Não foi possível salvar seu nome.\n\n{exc}")
+        self.tarefas.enviar("nome_operador", lambda: gravar_nome_operador(diretorio, nome), concluir)
 
     def rolar(self, evento):
         try:
@@ -865,19 +802,13 @@ class NOCFlow:
         for botao in (self.btn_novo, self.btn_importar, self.btn_ler_print, self.btn_movidesk,
                       self.btn_comunicado, self.btn_conectar, self.btn_proximo, self.btn_recebidos,
                       self.btn_adicionar_print, self.btn_operacao):
-            try:
+            with contextlib.suppress(tk.TclError):
                 botao.configure(state="disabled" if ocupado else "normal")
-            except tk.TclError:
-                pass
         for combo in (self.seletor_fila, self.seletor_canal, self.seletor_modelo):
-            try:
+            with contextlib.suppress(tk.TclError):
                 combo.configure(state="disabled" if ocupado else "readonly")
-            except tk.TclError:
-                pass
-        try:
+        with contextlib.suppress(tk.TclError):
             self.btn_mais.configure(state="disabled" if ocupado else "normal")
-        except tk.TclError:
-            pass
         self.btn_print.configure(state="disabled" if ocupado or self.imagem is None else "normal")
         self.btn_ampliar.configure(state="disabled" if self.fechando or self.imagem is None else "normal")
         self.seletor_evidencia.configure(state="disabled" if ocupado or self.imagem is None else "readonly")
@@ -892,10 +823,8 @@ class NOCFlow:
         self.entrada_acionamento_email.configure(state="disabled" if edicao_bloqueada else "normal")
         self.painel_fila.bloquear(ocupado)
         for entrada in self.entradas.values():
-            try:
+            with contextlib.suppress(tk.TclError):
                 entrada.configure(state="disabled" if edicao_bloqueada else "normal")
-            except tk.TclError:
-                pass
         for botao in self.btns_copiar:
             botao.configure(state="disabled" if edicao_bloqueada else "normal")
         self.atualizar_fluxo()
@@ -1068,10 +997,13 @@ class NOCFlow:
         self.imagem = imagem
         self.miniatura = None
         self.miniatura_chave = None
+        self.miniatura_previa = None
+        self.miniatura_previa_chave = None
         self.preview_imagem.configure(image="", text="Sem print (opcional)" if imagem is None else "")
         self.agendar_miniatura()
         self.atualizar_controles()
         self.atualizar_resumo_evidencia()
+        self.atualizar_previews()
 
     def agendar_miniatura(self, _=None):
         if self.imagem_after:
@@ -1086,11 +1018,14 @@ class NOCFlow:
         tamanho = (max(1, min(500, self.preview_imagem.winfo_width())), max(1, min(240, self.preview_imagem.winfo_height())))
         chave = (id(self.imagem), *tamanho)
         if chave != self.miniatura_chave:
-            miniatura = self.imagem.copy()
-            miniatura.thumbnail(tamanho)
-            self.miniatura = ImageTk.PhotoImage(miniatura, master=self.root)
-            self.miniatura_chave = chave
-            self.preview_imagem.configure(image=self.miniatura, text="")
+            imagem = self.imagem
+            def concluir(miniatura):
+                if self.imagem is imagem:
+                    self.miniatura = ImageTk.PhotoImage(miniatura, master=self.root)
+                    self.miniatura_chave = chave
+                    self.preview_imagem.configure(image=self.miniatura, text="")
+                self.agendar_miniatura()
+            self.tarefas.enviar("miniatura", lambda: preparar_miniatura(imagem, tamanho), concluir)
 
     def mostrar_tokens(self):
         self.guardar_incidente()
@@ -1117,12 +1052,12 @@ class NOCFlow:
         ttk.Button(conteudo, text="Configurações", command=self.configurar_apis).pack(anchor="w", pady=(12, 0))
 
     def configurar_apis(self):
-        try:
-            arquivo = preparar_config_apis(self.config.diretorio)
+        diretorio = self.config.diretorio
+        def preparar():
+            arquivo = preparar_config_apis(diretorio)
             subprocess.Popen(["notepad.exe", str(arquivo)])
-            self.informar("Ajuste o .env, salve e reinicie o NOCFlow.")
-        except Exception as exc:
-            self.exibir_erro(f"Não foi possível abrir as configurações.\n\n{exc}")
+        self.tarefas.enviar("configuracao", preparar,
+                            lambda _: self.informar("Ajuste o .env, salve e reinicie o NOCFlow."))
 
     def extrair_com_ia(self, permitir_ia=True, usar_clipboard=False):
         if self.operacao or self.carregando or self.fechando:
@@ -1170,6 +1105,7 @@ class NOCFlow:
             self.salvar_rascunho()
             self.atualizar_resumo_evidencia()
             self.atualizar_controles()
+            self.atualizar_previews()
             self.informar("Recortes salvos neste incidente. Escolha Recorte para usá-los no ticket ou copie a montagem.")
 
         EditorRecortes(self.root, imagem, self.recortes_email, confirmar)
@@ -1199,15 +1135,11 @@ class NOCFlow:
         if erros:
             self.recolher_fila()
             campo = next(iter(erros))
-            try:
+            with contextlib.suppress(tk.TclError):
                 self.paginas.select(str(self.pagina_comunicar if campo in ("ticket", "acionamento", "time_resp")
                                         else self.pagina_incidente))
-            except tk.TclError:
-                pass
-            try:
+            with contextlib.suppress(tk.TclError, KeyError):
                 self.entradas[campo].focus_set()
-            except (tk.TclError, KeyError):
-                pass
             self.informar("Revise os campos destacados.")
         if not erros and finalidade in ("WhatsApp", "Teams", "E-mail") and self.modelo_comunicado.get() not in (*MODELOS_ABERTURA, "Acionamento inicial"):
             if not self.texto_atualizacao.get().strip():
@@ -1265,7 +1197,8 @@ class NOCFlow:
                 self.informar("Confira e aplique a prioridade indicada em Central operacional > Avaliar regra.")
                 return
         identificador = self.iniciar_operacao("movidesk", "Abrindo Movidesk…")
-        imagem = montar_recortes(self.imagem, self.recortes_email) if self.imagem is not None and self.evidencia_escolha.get() == "Recorte" else self.imagem
+        imagem = self.imagem
+        caixas = dict(self.recortes_email) if self.evidencia_escolha.get() == "Recorte" else None
         item["meta"]["pedido"] = {"estado": "abrindo"}
         item["meta"].pop("preenchimento", None)
         item["meta"]["em_revisao"] = True
@@ -1275,15 +1208,15 @@ class NOCFlow:
             **self.obter_dados(),
             "_incidente_id": self.fila.ativo,
             "_imagem": imagem,
+            "_recortes": caixas,
             "_novo_pedido": novo_formulario,
         }))
 
     def configurar_extensao(self):
-        try:
-            pasta = preparar_extensao(self.config.diretorio)
-        except Exception as exc:
-            self.exibir_erro(f"Não foi possível preparar a extensão.\n\n{exc}")
-            return
+        diretorio = self.config.diretorio
+        self.tarefas.enviar("extensao", lambda: preparar_extensao(diretorio), self.mostrar_config_extensao)
+
+    def mostrar_config_extensao(self, pasta):
         janela = tk.Toplevel(self.root)
         janela.title("Extensão do Edge")
         janela.transient(self.root)
@@ -1318,18 +1251,32 @@ class NOCFlow:
     def copiar_comunicado(self, canal):
         if self.fechando or self.carregando or not self.validar(canal):
             return
-        try:
-            pyperclip.copy(gerar_template(self.obter_dados(), canal, self.config.movidesk_url,
-                                          self.nome_operador.get(), self.modelo_comunicado.get(),
-                                          self.texto_atualizacao.get()))
-            self.fila.obter()["meta"].setdefault("copias", {})[canal] = {"em": agora(), "modelo": self.modelo_comunicado.get()}
-            registrar_evento(self.fila.obter(), "Mensagem copiada", self.modelo_comunicado.get(), self.config.nome_operador, canal)
+        texto = gerar_template(self.obter_dados(), canal, self.config.movidesk_url,
+                                    self.nome_operador.get(), self.modelo_comunicado.get(),
+                                    self.texto_atualizacao.get())
+        imagem, caixas = self.imagem, dict(self.recortes_email)
+        recortar = self.evidencia_escolha.get() == "Recorte" and all(c in caixas for c in CAMPOS_RECORTE)
+        hwnd = self.root.winfo_id()
+        identificador, modelo = self.fila.ativo, self.modelo_comunicado.get()
+        autor = self.config.nome_operador
+        def copiar():
+            evidencia = (montar_recortes(imagem, caixas) if recortar else imagem) if canal == "E-mail" else None
+            if canal == "E-mail" and evidencia is not None:
+                copiar_html_texto(texto, gerar_html_email(texto, evidencia), hwnd)
+            else:
+                pyperclip.copy(texto)
+            return evidencia is not None
+        def concluir(com_imagem):
+            item = self.incidente_do_retorno(identificador)
+            if item is None:
+                return
+            item["meta"].setdefault("copias", {})[canal] = {"em": agora(), "modelo": modelo}
+            registrar_evento(item, "Mensagem copiada", modelo, autor, canal)
             self.revisao += 1
             self.salvar_rascunho()
             self.atualizar_previews()
-            self.informar(f"{canal} copiado.")
-        except Exception as exc:
-            self.exibir_erro(f"Não foi possível copiar.\n\n{exc}")
+            self.informar("E-mail + print copiados." if com_imagem else f"{canal} copiado.")
+        self.tarefas.enviar("comunicado", copiar, concluir)
 
     def novo_incidente(self):
         if self.operacao or self.carregando or self.fechando:
@@ -1413,8 +1360,11 @@ class NOCFlow:
 
     def processar_eventos(self):
         self.poll_after = None
+        limite_ciclo = time.monotonic() + 0.015
         try:
-            while True:
+            for _ in range(100):
+                if time.monotonic() >= limite_ciclo:
+                    break
                 tipo, identificador, resultado = self.eventos.get_nowait()
                 if tipo == "rascunho_carregado":
                     if not self.fechando:
@@ -1557,6 +1507,8 @@ class NOCFlow:
                         self.revisao += 1
                         self.salvar_rascunho()
                         self.informar("Print guardado.")
+                    elif tipo == "importacao_ok":
+                        self.aplicar_importacao(resultado)
                     elif tipo == "ia_ok":
                         dados = self.obter_dados()
                         mudou = any(dados[c] and resultado.get(c) and dados[c] != resultado[c]
@@ -1607,8 +1559,7 @@ class NOCFlow:
         except queue.Empty:
             pass
         if self.importacoes_pendentes and not self.operacao and not self.carregando and not self.fechando:
-            while self.importacoes_pendentes:
-                self.aplicar_importacao(self.importacoes_pendentes.pop(0), selecionar=False)
+            self.aplicar_importacao(self.importacoes_pendentes.pop(0), selecionar=False)
         if self.operacao:
             self.tempo.set(f"{int(time.monotonic() - self.inicio_operacao)}s")
         if not self.carregando and not self.fechando and time.monotonic() - self.ultima_agenda > 5:
@@ -1624,6 +1575,10 @@ class NOCFlow:
     def fechar(self):
         if self.fechando:
             return
+        if self.tarefas.callbacks or (self.central and not self.central.fechada and self.central.tarefas.callbacks):
+            self.informar("Aguarde a conclusão das tarefas locais antes de fechar.")
+            self.root.after(100, self.fechar)
+            return
         self.fechando = True
         if self.central and not self.central.fechada:
             self.central.fechar()
@@ -1638,6 +1593,7 @@ class NOCFlow:
         self.informar("Salvando e encerrando…")
 
     def encerrar_workers(self):
+        self.tarefas.fechar()
         self.rascunho.comandos.put(None)
         self.movidesk.encerrar.set()
 
@@ -1648,19 +1604,22 @@ class NOCFlow:
             self.perfis_chave = None
             self.erro_perfis = ""
             return
-        try:
-            caminho = Path(arquivo)
-            stat = caminho.stat()
-            chave = (str(caminho), stat.st_mtime_ns, stat.st_size)
-            if chave == self.perfis_chave and not self.erro_perfis:
-                return
-            self.perfis_operacionais = carregar_perfis(caminho)
-            self.perfis_chave = chave
-            self.erro_perfis = ""
-        except (ValueError, OSError) as exc:
+        if arquivo == self.perfis_arquivo and time.monotonic() - self.perfis_consulta < 5:
+            return
+        if arquivo != self.perfis_arquivo:
             self.perfis_operacionais = []
             self.perfis_chave = None
-            self.erro_perfis = f"Perfis indisponíveis: {exc}"
+            self.erro_perfis = "Carregando perfis operacionais…"
+        anterior = self.perfis_chave
+        def concluir(resultado):
+            if self.fila.operacional.get("arquivo_perfis") != arquivo:
+                return
+            self.perfis_chave, perfis, self.erro_perfis = resultado
+            if perfis is not None:
+                self.perfis_operacionais = perfis
+        if self.tarefas.enviar("perfis", lambda: ler_perfis(arquivo, anterior), concluir):
+            self.perfis_arquivo = arquivo
+            self.perfis_consulta = time.monotonic()
 
     def avaliar_perfil(self, dados):
         if self.fila.operacional.get("arquivo_perfis"):
@@ -1691,13 +1650,15 @@ class NOCFlow:
 
 def main():
     root = tk.Tk()
+    exclusividade = None
     try:
         config = carregar_config(diretorio_aplicacao())
-        config.dados_dir.mkdir(parents=True, exist_ok=True)
-        handler = RotatingFileHandler(config.dados_dir / "noc.log", maxBytes=1_000_000, backupCount=2, encoding="utf-8")
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(threadName)s] %(message)s"))
-        logging.getLogger("noc").addHandler(handler)
-        logging.getLogger("noc").setLevel(logging.INFO)
+        exclusividade = ExclusividadeDados(config.dados_dir)
+        logger = configurar_logging(config.dados_dir)
+        def falha_callback(tipo, valor, trace):
+            logger.error("Falha em callback da interface", exc_info=(tipo, valor, trace))
+            messagebox.showerror("Falha na operação", "Consulte o diagnóstico em .noc_data/logs/.", parent=root)
+        root.report_callback_exception = falha_callback
         try:
             preparar_extensao(config.diretorio)
         except Exception:
@@ -1707,5 +1668,10 @@ def main():
     except Exception as exc:
         messagebox.showerror("Não foi possível iniciar", str(exc), parent=root)
         root.destroy()
+        if exclusividade:
+            exclusividade.fechar()
         return
-    root.mainloop()
+    try:
+        root.mainloop()
+    finally:
+        exclusividade.fechar()

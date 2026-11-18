@@ -1,14 +1,14 @@
 """Validação do formulário e templates locais para tickets e comunicados."""
 
 import base64
-from datetime import datetime
-from html import escape
 import io
 import re
+from datetime import datetime
+from html import escape
 
+from .atendimento import link_ticket
 from .configuracao import url_valida
 from .incidentes import CAMPOS_FORMULARIO
-from .atendimento import link_ticket
 
 
 def validar_dados(dados, finalidade, permitir_sem_ticket=False):
@@ -103,6 +103,14 @@ def codificar_imagem_png(imagem):
     buffer = io.BytesIO()
     imagem.save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def gerar_html_email(texto, imagem=None):
+    corpo = f'<div style="white-space:pre-wrap;font-family:Segoe UI,sans-serif;font-size:11pt">{escape(texto)}</div>'
+    b64 = codificar_imagem_png(imagem)
+    if not b64:
+        return corpo
+    return f'<div>{corpo}<p style="margin:12px 0 0"><img src="data:image/png;base64,{b64}" alt="Evidência do alerta" style="max-width:100%;height:auto"></p></div>'
 
 
 def gerar_html(dados, imagem=None):

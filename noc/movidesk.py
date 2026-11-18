@@ -7,6 +7,7 @@ import time
 
 from .comunicados import gerar_html
 from .edge_bridge import EdgeBridge, abrir_no_edge
+from .services.evidencias import montar_recortes
 
 LOGGER = logging.getLogger("noc")
 
@@ -24,6 +25,46 @@ class MovideskWorker(threading.Thread):
         self.ponte = ponte or EdgeBridge()
         self.pendentes = {}
         self.estado_conexao = "desconectado"
+
+    @staticmethod
+    def _servico_das_tags(dados):
+        import re
+        import unicodedata
+        def norm(t):
+            return unicodedata.normalize("NFD", str(t or "")).encode("ascii", "ignore").decode("ascii").lower().strip()
+        nomes = {
+            "sql": "SQL Server", "sql server": "SQL Server", "sqlserver": "SQL Server", "mssql": "SQL Server",
+            "mysql": "MySQL", "oracle": "Oracle", "postgre": "PostgreSQL", "postgres": "PostgreSQL",
+            "postgresql": "PostgreSQL", "mongo": "MongoDB", "mongodb": "MongoDB", "redis": "Redis",
+        }
+        especificos = set()
+        for linha in str(dados.get("tags", "")).splitlines():
+            if ":" not in linha:
+                continue
+            chave, valor = linha.split(":", 1)
+            if norm(chave) == "movidesk":
+                continue
+            termo = re.sub(r"^dba\s+", "", norm(valor))
+            if termo in nomes:
+                especificos.add(nomes[termo])
+        if len(especificos) == 1:
+            return next(iter(especificos))
+        if len(especificos) > 1:
+            contexto = norm(f"{dados.get('alerta', '')} {dados.get('servidor', '')}")
+            pistas = (
+                ("SQL Server", r"\b(?:mssql|sql\s*server|sqlserver)\b"),
+                ("MySQL", r"\b(?:mysql|mariadb)\b"),
+                ("PostgreSQL", r"\b(?:postgre|postgres|postgresql)\b"),
+                ("MongoDB", r"\b(?:mongo|mongodb)\b"),
+                ("Oracle", r"\boracle\b"),
+                ("Redis", r"\bredis\b"),
+            )
+            achados = [nome for nome, padrao in pistas if nome in especificos and re.search(padrao, contexto)]
+            if len(achados) == 1:
+                return achados[0]
+            if re.search(r"\bsql\b", contexto) and not re.search(r"\b(?:mysql|postgre|postgres)\b", contexto) and "SQL Server" in especificos:
+                return "SQL Server"
+        return ""
 
     def status(self, operacao, texto):
         self.eventos.put(("progresso", operacao, texto))
@@ -135,8 +176,7 @@ class MovideskWorker(threading.Thread):
                         if incidente is None:
                             self.ponte.descartar(anterior)
                             self.pendentes.pop(token, None)
-                    pedido.expira = time.monotonic() + 43200
-                    pedido.ultimo_sinal = time.monotonic()
+                    self.ponte.renovar(pedido, 43200)
                     self.pendentes[pedido.token] = (pedido, None)
                     # Uma reconexão renova o prazo mesmo se o estado anterior já era conectado.
                     self.estado_conexao = "conectando"
@@ -163,6 +203,8 @@ class MovideskWorker(threading.Thread):
         if any(i == incidente and p.expira > time.monotonic() for p, i in self.pendentes.values()):
             self.retomar(operacao, incidente)
             return False
+        if dados.get("_imagem") is not None and dados.get("_recortes"):
+            dados = {**dados, "_imagem": montar_recortes(dados["_imagem"], dados["_recortes"])}
         pedido = self.ponte.criar_pedido({
             "url": f"{self.config.movidesk_url}/Ticket/Create",
             "assunto": " - ".join(v for v in (dados['alerta'], dados.get('servidor') or dados.get('servico', '')) if v),
@@ -173,7 +215,8 @@ class MovideskWorker(threading.Thread):
             "link_zabbix": dados.get("link_zabbix", ""),
             "html": gerar_html(dados),
             "solicitante": dados.get("solicitante", ""),
-            "servico": dados.get("servico", ""),
+            "servico": dados.get("servico", "") or self._servico_das_tags(dados),
+            "tags": dados.get("tags", ""),
             "exigir_interno": True,
             "timeout_login": self.config.timeout_login, "timeout_retorno": self.config.timeout_ticket,
         }, self.config.timeout_login)
@@ -193,7 +236,7 @@ class MovideskWorker(threading.Thread):
                 except queue.Empty:
                     continue
                 if tipo == "ok":
-                    pedido.expira = time.monotonic() + self.config.timeout_ticket
+                    self.ponte.renovar(pedido, self.config.timeout_ticket)
                     self.pendentes[pedido.token] = (pedido, incidente)
                     self.eventos.put(("pedido_status", incidente, {"estado": "aguardando",
                         "expira": time.time() + self.config.timeout_ticket,

@@ -142,6 +142,13 @@
     const avisos = dados.eventos.filter(e => e.aviso).length;
     return `${dados.eventos.length} evento(s) enviado(s) à fila do NOCFlow.${avisos ? ` ${avisos} com pendências de coleta; confira no aplicativo.` : ""}`;
   }, true);
+  botao("Copiar dados para NOCFlow", async () => {
+    const dados = await payload(false);
+    const texto = JSON.stringify(dados);
+    if (new TextEncoder().encode(texto).length > 2000000) throw new Error("Lote excede 2 MB. Selecione menos eventos.");
+    await navigator.clipboard.writeText(texto);
+    return `${dados.eventos.length} evento(s) copiado(s). Use Ctrl+I no NOCFlow.`;
+  }, !extensao);
   if (lista) {
     botao("Selecionar primeiras N linhas", async () => {
       const valor = prompt("Quantas linhas selecionar? (1–100)", "4");
@@ -151,7 +158,6 @@
     botao("Copiar links selecionados", async () => navigator.clipboard.writeText(coletor.selecionados(document, location.href).map(e => e.link_zabbix).join("\n")));
     return;
   }
-  botao("Copiar link", async () => navigator.clipboard.writeText(location.href));
   botao("Copiar Trigger - Host", async () => {
     const d = coletor.extrair(document, location.href);
     await navigator.clipboard.writeText(`${d.alerta} - ${d.servidor}`);
@@ -161,7 +167,6 @@
     if (!numero) throw new Error("Chamado não encontrado na tabela de reconhecimentos.");
     await navigator.clipboard.writeText(numero);
   });
-  const template = d => `Prezados,\n\nRecebemos o seguinte alerta:\n\nN° do Ticket criado:\nAlerta: ${d.alerta}\nSeveridade: ${d.severidade}\nServidor: ${d.servidor}\nDados operacionais: ${d.situacao}\nHorário da Falha: ${d.horario}`;
   botao("Copiar imagem Host / Trigger / Severity", async () => navigator.clipboard.write([new ClipboardItem({"image/png": await imagem()})]));
   botao("Copiar link + imagem", async () => {
     const link = document.createElement("a");
@@ -172,11 +177,4 @@
     await copiarComImagem(location.href, cabecalho);
     return "Link e imagem copiados.";
   }, true);
-  botao("Copiar e-mail + imagem", async () => {
-    const texto = template(coletor.extrair(document, location.href));
-    const pre = document.createElement("div");
-    pre.style.whiteSpace = "pre-wrap";
-    pre.textContent = texto;
-    await copiarComImagem(texto, pre);
-  });
 })();

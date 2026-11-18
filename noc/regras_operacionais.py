@@ -1,9 +1,9 @@
 """Perfis privados e decisões determinísticas, com versão, fontes e conflitos."""
 
-from copy import deepcopy
-from datetime import date, timedelta
 import hashlib
 import json
+from copy import deepcopy
+from datetime import date, timedelta
 from pathlib import Path
 
 from .agenda_operacional import calendario_valido, em_janela, fuso, hora

@@ -1,9 +1,9 @@
 """Busca local em procedimentos explicitamente selecionados pelo operador."""
 
 import json
-from pathlib import Path
 import re
 from datetime import date
+from pathlib import Path
 
 from .atendimento import normalizar
 

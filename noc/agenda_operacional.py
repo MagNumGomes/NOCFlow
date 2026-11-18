@@ -1,20 +1,20 @@
 """Calendários e ocorrências persistentes; cálculo sem IA e com fusos explícitos."""
 
+import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-import uuid
 
 from .historico_atendimento import instante
 
 
-def fuso(nome):
+def fuso(nome: str) -> ZoneInfo:
     try:
         return ZoneInfo(nome)
     except (ZoneInfoNotFoundError, ValueError, TypeError):
         raise ValueError("Fuso desconhecido. Use um nome IANA, como UTC ou America/Sao_Paulo.") from None
 
 
-def hora(valor):
+def hora(valor: str) -> time:
     try:
         if not isinstance(valor, str) or len(valor) != 5:
             raise ValueError
@@ -59,7 +59,7 @@ def em_janela(agora, calendario, inicio="00:00", fim="00:00"):
     return dia_permitido(dia, calendario) and (local.time() >= a or local.time() < b)
 
 
-def proximo_horario(rotina, depois):
+def proximo_horario(rotina: dict, depois: str | datetime) -> str:
     limite = instante(depois)
     calendario = rotina["calendario"]
     zona = fuso(calendario.get("fuso", "UTC"))
@@ -71,7 +71,8 @@ def proximo_horario(rotina, depois):
             continue
         candidatos = []
         for h in horarios:
-            local = datetime.combine(dia, h, zona)
+            # Uma ocorrência por horário civil: na volta do DST usa fold=0.
+            local = datetime.combine(dia, h, zona).replace(fold=0)
             utc = local.astimezone(timezone.utc)
             # Horários inexistentes na transição de verão não geram ocorrência.
             if utc.astimezone(zona).replace(tzinfo=None) != datetime.combine(dia, h):
