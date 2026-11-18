@@ -34,7 +34,7 @@ Aplicativo desktop para Windows criado para apoiar equipes de **NOC (Network Ope
 
 ## ✨ Principais Recursos
 
-- **Importação direta do Zabbix:** coleta estruturada de alertas individuais ou em lote pela extensão do Microsoft Edge ou via JSON/Tampermonkey, incluindo captura automática da tabela de evidência e leitura de tags (`Movidesk` / `Dataside`).
+- **Importação direta do Zabbix:** coleta estruturada de alertas individuais ou em lote pela extensão do Microsoft Edge ou via JSON/Tampermonkey, incluindo captura automática da tabela de evidência e leitura de tags de solicitante e serviço.
 - **Preenchimento assistido no Movidesk:** automação na sessão já autenticada do navegador do operador, com preservação da assinatura do agente e captura automática do protocolo gerado.
 - **Atendimento multicanal e fila inteligente:** busca instantânea, filtros por etapa e severidade, proteção de campos revisados manualmente, histórico de eventos e arquivamento.
 - **Comunicados prontos e assinatura no WhatsApp Web:** templates para WhatsApp, Teams e E-mail (*Abertura normal*, *Abertura inicial*, *Acionamento*, *Atualização* e *Normalização*), além de popup na extensão para assinar mensagens direto no WhatsApp Web sem envio acidental.

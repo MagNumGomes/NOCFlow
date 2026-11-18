@@ -15,7 +15,7 @@ from PIL import Image
 from noc.interface import NOCFlow
 from noc.incidentes import CAMPOS_FORMULARIO as CAMPOS
 from noc.configuracao import Config, carregar_config, diretorio_aplicacao
-from noc.comunicados import gerar_html, validar_dados
+from noc.comunicados import gerar_html, gerar_html_email, validar_dados
 from noc.rascunhos import RascunhoWorker
 
 
@@ -361,6 +361,26 @@ class InterfaceTests(unittest.TestCase):
         self.app.definir_imagem(Image.new("RGB", (50, 50)))
         self.assertEqual(self.app.recortes_email, {})
         self.assertEqual(str(self.app.btn_imagem_email["state"]), "disabled")
+
+    def test_comunicar_email_inclui_print_abaixo_do_texto_no_template_e_na_previa(self):
+        imagem = Image.new("RGB", (60, 40), "green")
+        self.app.definir_dados(dados_incidente())
+        self.app.definir_imagem(imagem)
+        self.app.canal.set("E-mail")
+        self.app.mudar_canal()
+        self.assertIsNotNone(self.app.miniatura_previa)
+        self.assertEqual(len(self.app.previa.image_names()), 1)
+        with patch("noc.interface.copiar_html_texto") as copiar_rico, patch("noc.interface.pyperclip.copy") as copiar_texto:
+            self.app.copiar_comunicado("E-mail")
+            copiar_rico.assert_called_once()
+            copiar_texto.assert_not_called()
+            texto, html, _ = copiar_rico.call_args.args
+            self.assertIn("N° do Ticket criado: 123", texto)
+            self.assertIn("data:image/png;base64,", html)
+            self.assertLess(html.index("N° do Ticket criado: 123"), html.index("<img "))
+        self.assertIn("E-mail + print copiados.", self.app.status.get())
+        html_sem_img = gerar_html_email("Texto puro", None)
+        self.assertNotIn("<img", html_sem_img)
 
     def test_receber_evento_mantem_contexto_e_reimportar_preserva_edicao(self):
         from noc.incidentes import importar_eventos

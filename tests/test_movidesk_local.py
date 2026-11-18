@@ -316,6 +316,7 @@ class PreenchimentoDOMTests(unittest.TestCase):
                 page.evaluate("Object.defineProperty(navigator, 'clipboard', {value: {writeText: async texto => {window.copiado = texto;}}})")
                 page.add_script_tag(content=(raiz / "edge_extension/movidesk.js").read_text(encoding="utf-8"))
                 page.locator("#nocflow-movidesk-utilitarios summary").click()
+                self.assertEqual(page.get_by_role("button", name="Copiar link", exact=True).count(), 0)
                 page.get_by_role("button", name="Copiar template", exact=True).click()
                 self.assertEqual(page.evaluate("window.copiado"), "123456\nCPU - host\nhttps://empresa.movidesk.com/Ticket/Edit/123456")
             finally:

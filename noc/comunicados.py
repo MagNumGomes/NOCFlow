@@ -105,6 +105,14 @@ def codificar_imagem_png(imagem):
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
+def gerar_html_email(texto, imagem=None):
+    corpo = f'<div style="white-space:pre-wrap;font-family:Segoe UI,sans-serif;font-size:11pt">{escape(texto)}</div>'
+    b64 = codificar_imagem_png(imagem)
+    if not b64:
+        return corpo
+    return f'<div>{corpo}<p style="margin:12px 0 0"><img src="data:image/png;base64,{b64}" alt="Evidência do alerta" style="max-width:100%;height:auto"></p></div>'
+
+
 def gerar_html(dados, imagem=None):
     d = {campo: escape(dados.get(campo, ""), quote=True) for campo in CAMPOS_FORMULARIO}
     b64 = codificar_imagem_png(imagem if imagem is not None else dados.get("_imagem"))

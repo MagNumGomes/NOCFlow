@@ -77,16 +77,69 @@
       }) : texto(tr.cells[1]).split("\n").map(valor => valor.trim()).filter(Boolean);
       for (const valor of valores) if (valor && !tags.includes(valor)) tags.push(valor);
     }
-    function tag(nome) {
+    function normalizarServico(valor) {
+      const termo = normalizar(valor).replace(/^dba\s+/, "");
+      const nomes = {
+        sql: "SQL Server", "sql server": "SQL Server", sqlserver: "SQL Server", mssql: "SQL Server",
+        mysql: "MySQL", oracle: "Oracle", postgre: "PostgreSQL", postgres: "PostgreSQL", postgresql: "PostgreSQL",
+        mongo: "MongoDB", mongodb: "MongoDB", redis: "Redis"
+      };
+      return nomes[termo] || "";
+    }
+    function tag(...nomes) {
+      const alvos = new Set(nomes.map(normalizar));
       const unicos = new Map();
-      for (const t of tags.filter(t => normalizar(t.split(":")[0]) === nome)) {
+      for (const t of tags.filter(t => alvos.has(normalizar(t.split(":")[0])))) {
         const valor = t.slice(t.indexOf(":") + 1).trim();
-        if (valor && !unicos.has(normalizar(valor))) unicos.set(normalizar(valor), valor);
+        const chave = normalizar(normalizarServico(valor) || valor);
+        if (valor && !unicos.has(chave)) unicos.set(chave, normalizarServico(valor) || valor);
       }
       const valores = [...unicos.values()];
       return valores.length === 1 ? valores[0] : "";
     }
-    return {...dados, tags: tags.join("\n"), solicitante: tag("movidesk"), servico: tag("dataside"), link_zabbix: url.href, eventid: url.searchParams.get("eventid")};
+    function tagServico() {
+      const especificos = new Map();
+      for (const t of tags) {
+        if (!t.includes(":")) continue;
+        const chave = normalizar(t.split(":")[0]);
+        if (chave === "movidesk") continue;
+        const canonico = normalizarServico(t.slice(t.indexOf(":") + 1));
+        if (canonico) especificos.set(normalizar(canonico), canonico);
+      }
+      if (especificos.size === 1) return [...especificos.values()][0];
+      if (especificos.size > 1) {
+        const textoContexto = normalizar(`${dados.alerta} ${dados.servidor}`);
+        const pistas = [
+          ["SQL Server", /\b(?:mssql|sql\s*server|sqlserver)\b/],
+          ["MySQL", /\b(?:mysql|mariadb)\b/],
+          ["PostgreSQL", /\b(?:postgre|postgres|postgresql)\b/],
+          ["MongoDB", /\b(?:mongo|mongodb)\b/],
+          ["Oracle", /\boracle\b/],
+          ["Redis", /\bredis\b/]
+        ];
+        const correspondentes = pistas.filter(([nome, regex]) => especificos.has(normalizar(nome)) && regex.test(textoContexto));
+        if (correspondentes.length === 1) return correspondentes[0][0];
+        if (/\bsql\b/.test(textoContexto) && !/\b(?:mysql|postgre|postgres)\b/.test(textoContexto) && especificos.has("sql server")) {
+          return "SQL Server";
+        }
+        return "";
+      }
+      const rotulado = tag("servico", "service", "equipe", "time", "fila");
+      if (rotulado) return rotulado;
+      const padrao = /^(?:dba\b|nosql$|noc$|cloud\b|infra(?:estrutura)?\b|redes?\b|network\b|seguranca\b|security\b|backup\b|linux\b|windows\b|storage\b|virtualizacao\b|devops\b|sre\b|observability\b|monitoramento\b)/i;
+      const unicos = new Map();
+      for (const t of tags) {
+        if (!t.includes(":")) continue;
+        const chave = normalizar(t.split(":")[0]);
+        const valor = t.slice(t.indexOf(":") + 1).trim();
+        if (chave !== "movidesk" && padrao.test(normalizar(valor)) && !unicos.has(normalizar(valor))) {
+          unicos.set(normalizar(valor), valor);
+        }
+      }
+      const valores = [...unicos.values()];
+      return valores.length === 1 ? valores[0] : "";
+    }
+    return {...dados, tags: tags.join("\n"), solicitante: tag("movidesk"), servico: tagServico(), link_zabbix: url.href, eventid: url.searchParams.get("eventid")};
   }
   function selecionados(doc, href) {
     const eventos = new Map();
@@ -312,7 +365,6 @@
     botao("Copiar links selecionados", async () => navigator.clipboard.writeText(coletor.selecionados(document, location.href).map(e => e.link_zabbix).join("\n")));
     return;
   }
-  botao("Copiar link", async () => navigator.clipboard.writeText(location.href));
   botao("Copiar Trigger - Host", async () => {
     const d = coletor.extrair(document, location.href);
     await navigator.clipboard.writeText(`${d.alerta} - ${d.servidor}`);
@@ -322,7 +374,6 @@
     if (!numero) throw new Error("Chamado não encontrado na tabela de reconhecimentos.");
     await navigator.clipboard.writeText(numero);
   });
-  const template = d => `Prezados,\n\nRecebemos o seguinte alerta:\n\nN° do Ticket criado:\nAlerta: ${d.alerta}\nSeveridade: ${d.severidade}\nServidor: ${d.servidor}\nDados operacionais: ${d.situacao}\nHorário da Falha: ${d.horario}`;
   botao("Copiar imagem Host / Trigger / Severity", async () => navigator.clipboard.write([new ClipboardItem({"image/png": await imagem()})]));
   botao("Copiar link + imagem", async () => {
     const link = document.createElement("a");
@@ -333,11 +384,4 @@
     await copiarComImagem(location.href, cabecalho);
     return "Link e imagem copiados.";
   }, true);
-  botao("Copiar e-mail + imagem", async () => {
-    const texto = template(coletor.extrair(document, location.href));
-    const pre = document.createElement("div");
-    pre.style.whiteSpace = "pre-wrap";
-    pre.textContent = texto;
-    await copiarComImagem(texto, pre);
-  });
 })();

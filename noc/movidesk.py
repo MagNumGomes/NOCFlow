@@ -25,6 +25,46 @@ class MovideskWorker(threading.Thread):
         self.pendentes = {}
         self.estado_conexao = "desconectado"
 
+    @staticmethod
+    def _servico_das_tags(dados):
+        import re
+        import unicodedata
+        def norm(t):
+            return unicodedata.normalize("NFD", str(t or "")).encode("ascii", "ignore").decode("ascii").lower().strip()
+        nomes = {
+            "sql": "SQL Server", "sql server": "SQL Server", "sqlserver": "SQL Server", "mssql": "SQL Server",
+            "mysql": "MySQL", "oracle": "Oracle", "postgre": "PostgreSQL", "postgres": "PostgreSQL",
+            "postgresql": "PostgreSQL", "mongo": "MongoDB", "mongodb": "MongoDB", "redis": "Redis",
+        }
+        especificos = set()
+        for linha in str(dados.get("tags", "")).splitlines():
+            if ":" not in linha:
+                continue
+            chave, valor = linha.split(":", 1)
+            if norm(chave) == "movidesk":
+                continue
+            termo = re.sub(r"^dba\s+", "", norm(valor))
+            if termo in nomes:
+                especificos.add(nomes[termo])
+        if len(especificos) == 1:
+            return next(iter(especificos))
+        if len(especificos) > 1:
+            contexto = norm(f"{dados.get('alerta', '')} {dados.get('servidor', '')}")
+            pistas = (
+                ("SQL Server", r"\b(?:mssql|sql\s*server|sqlserver)\b"),
+                ("MySQL", r"\b(?:mysql|mariadb)\b"),
+                ("PostgreSQL", r"\b(?:postgre|postgres|postgresql)\b"),
+                ("MongoDB", r"\b(?:mongo|mongodb)\b"),
+                ("Oracle", r"\boracle\b"),
+                ("Redis", r"\bredis\b"),
+            )
+            achados = [nome for nome, padrao in pistas if nome in especificos and re.search(padrao, contexto)]
+            if len(achados) == 1:
+                return achados[0]
+            if re.search(r"\bsql\b", contexto) and not re.search(r"\b(?:mysql|postgre|postgres)\b", contexto) and "SQL Server" in especificos:
+                return "SQL Server"
+        return ""
+
     def status(self, operacao, texto):
         self.eventos.put(("progresso", operacao, texto))
 
@@ -173,7 +213,8 @@ class MovideskWorker(threading.Thread):
             "link_zabbix": dados.get("link_zabbix", ""),
             "html": gerar_html(dados),
             "solicitante": dados.get("solicitante", ""),
-            "servico": dados.get("servico", ""),
+            "servico": dados.get("servico", "") or self._servico_das_tags(dados),
+            "tags": dados.get("tags", ""),
             "exigir_interno": True,
             "timeout_login": self.config.timeout_login, "timeout_retorno": self.config.timeout_ticket,
         }, self.config.timeout_login)

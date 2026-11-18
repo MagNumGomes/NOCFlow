@@ -59,7 +59,6 @@
     status.setAttribute("role", "status");
     for (const [rotulo, obter] of [
       ["Copiar número", () => { if (!numero()) throw new Error("Salve o ticket para obter o número pela URL."); return numero(); }],
-      ["Copiar link", linkTicket],
       ["Copiar ticket + assunto", () => { if (!assunto()) throw new Error("Assunto não localizado neste layout."); return [numero(), assunto()].filter(Boolean).join(" - "); }],
       ["Copiar template", () => { if (!numero() || !assunto()) throw new Error("Número ou assunto não encontrado. Confira o ticket salvo."); return `${numero()}\n${assunto()}\n${linkTicket()}`; }]
     ]) {

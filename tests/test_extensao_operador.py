@@ -133,10 +133,10 @@ class ExtensaoOperadorTests(unittest.TestCase):
             } else {
               window.ultimaBuscaSolicitante = opcoes.data.q;
               resposta = {results: [
-                {id: '24729635', text: 'Ferreira e Chagas Advogados', name: '[Ferreira e Chagas] SQLServer | FERRSDB1',
+                {id: '24729635', text: 'Empresa Exemplo Ltda', name: '[Empresa Exemplo] SQLServer | SRVSQL01',
                  personType: 4, email: '', hierarchy: [{id: 22614729, personType: 2}, {id: 22614932, personType: 4}]},
-                {id: '34914451', text: 'Ferreira e Chagas Advogados', name: 'Aline Greghi Hernandez',
-                 personType: 1, email: 'aline@example.com', hierarchy: [{id: 22614729, personType: 2}, {id: 22614932, personType: 4}, {id: 31720188, personType: 1}]}
+                {id: '34914451', text: 'Empresa Exemplo Ltda', name: 'Contato Exemplo',
+                 personType: 1, email: 'contato@example.com', hierarchy: [{id: 22614729, personType: 2}, {id: 22614932, personType: 4}, {id: 31720188, personType: 1}]}
               ], more: false};
             }
             setTimeout(() => opcoes.success(resposta), 0);
@@ -183,7 +183,7 @@ class ExtensaoOperadorTests(unittest.TestCase):
 
     def test_coleta_tags_sem_duplicar_tecnologia(self):
         self.page.set_content('''<table><tr><td>Tags</td><td>
-          <span class="tag">Dataside: DBA MySQL</span><span class="tag">Dataside: DBA mySQL</span>
+          <span class="tag">Equipe: DBA MySQL</span><span class="tag">Equipe: DBA mySQL</span>
           <span class="tag">Movidesk: 1249803422</span></td></tr></table>''')
         self.page.add_script_tag(content=(self.raiz / "coletor.js").read_text(encoding="utf-8"))
         dados = self.page.evaluate("() => NOCFlowZabbix.extrair(document, 'https://zabbix.example.com/tr_events.php?eventid=1')")
@@ -193,7 +193,14 @@ class ExtensaoOperadorTests(unittest.TestCase):
         ids = fila.importar(eventos)
         item = next(i for i in fila.itens if i["id"] == ids[0])
         self.assertEqual(item["dados"]["solicitante"], "1249803422")
-        self.assertEqual(item["dados"]["servico"], "DBA MySQL")
+        self.assertEqual(item["dados"]["servico"], "MySQL")
+        self.page.set_content('''<table><tr><td>Trigger</td><td>MSSQL: SQL Wait Time</td></tr>
+          <tr><td>Host</td><td>Servidor Linux SQL</td></tr>
+          <tr><td>Tags</td><td><span class="tag">Org: DBA SQL</span><span class="tag">Org: DBA SQLServer</span>
+          <span class="tag">Movidesk: 709597589</span></td></tr></table>''')
+        self.page.add_script_tag(content=(self.raiz / "coletor.js").read_text(encoding="utf-8"))
+        dados_sql = self.page.evaluate("() => NOCFlowZabbix.extrair(document, 'https://zabbix.example.com/tr_events.php?eventid=2')")
+        self.assertEqual(dados_sql["servico"], "SQL Server")
 
     def test_popup_salva_nome_e_solicita_assinatura_apenas_no_whatsapp(self):
         self.page.set_content((self.raiz / "popup.html").read_text(encoding="utf-8"))

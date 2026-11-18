@@ -118,9 +118,44 @@ export async function preencherFormulario(dados) {
   function tecnologiaServico(tag) {
     const termo = normalizar(tag).replace(/^dba\s+/, "");
     const nomes = {sql: "SQL Server", "sql server": "SQL Server", sqlserver: "SQL Server", mssql: "SQL Server",
-      mysql: "MySQL", oracle: "Oracle", postgres: "PostgreSQL", postgresql: "PostgreSQL",
+      mysql: "MySQL", oracle: "Oracle", postgre: "PostgreSQL", postgres: "PostgreSQL", postgresql: "PostgreSQL",
       mongo: "MongoDB", mongodb: "MongoDB", redis: "Redis"};
     return nomes[termo] || String(tag || "").trim();
+  }
+
+  function resolverServico(dados) {
+    if (dados.servico && String(dados.servico).trim()) {
+      return tecnologiaServico(dados.servico);
+    }
+    const especificos = new Set();
+    for (const linha of String(dados.tags || "").split("\n")) {
+      if (!linha.includes(":")) continue;
+      const chave = normalizar(linha.split(":")[0]);
+      if (chave === "movidesk") continue;
+      const valor = linha.slice(linha.indexOf(":") + 1).trim();
+      const convertido = tecnologiaServico(valor);
+      if (["SQL Server", "MySQL", "Oracle", "PostgreSQL", "MongoDB", "Redis"].includes(convertido)) {
+        especificos.add(convertido);
+      }
+    }
+    if (especificos.size === 1) return [...especificos][0];
+    if (especificos.size > 1) {
+      const textoContexto = normalizar(`${dados.alerta || ""} ${dados.servidor || ""}`);
+      const pistas = [
+        ["SQL Server", /\b(?:mssql|sql\s*server|sqlserver)\b/],
+        ["MySQL", /\b(?:mysql|mariadb)\b/],
+        ["PostgreSQL", /\b(?:postgre|postgres|postgresql)\b/],
+        ["MongoDB", /\b(?:mongo|mongodb)\b/],
+        ["Oracle", /\boracle\b/],
+        ["Redis", /\bredis\b/]
+      ];
+      const correspondentes = pistas.filter(([nome, regex]) => especificos.has(nome) && regex.test(textoContexto));
+      if (correspondentes.length === 1) return correspondentes[0][0];
+      if (/\bsql\b/.test(textoContexto) && !/\b(?:mysql|postgre|postgres)\b/.test(textoContexto) && especificos.has("SQL Server")) {
+        return "SQL Server";
+      }
+    }
+    return "";
   }
 
   function selecaoVisivel(el) {
@@ -156,7 +191,12 @@ export async function preencherFormulario(dados) {
       s2.data(escolhido);
       jq(el).trigger({type: "change", val: escolhido.id, added: escolhido});
       const depois = s2.data?.();
-      if (depois && String(depois.id) === String(escolhido.id)) return true;
+      if (depois && String(depois.id) === String(escolhido.id)) {
+        for (let espera = 0; espera < 15 && Number(jq.active || 0) > 0; espera++) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        return true;
+      }
     }
     return false;
   }
@@ -190,9 +230,19 @@ export async function preencherFormulario(dados) {
         exatos.find(c => !/tempor/.test(normalizar(c.path))) || exatos[0] ||
         candidatos.find(c => normalizar(`${c.path || ""} ${c.name}`).includes(normalizar(termo)));
       if (!alvo) continue;
-      dadosWidget.setValue({id: alvo.id, name: alvo.name, path: alvo.path || "", allowSelection: true,
+      const valorServico = {id: alvo.id, name: alvo.name, path: alvo.path || "", allowSelection: true,
         allowFinishTicket: alvo.allowFinishTicket !== false, serviceForTicketType: alvo.serviceForTicketType ?? 0,
-        description: alvo.description ?? null, automationMacroId: alvo.automationMacroId ?? null});
+        description: alvo.description ?? null, automationMacroId: alvo.automationMacroId ?? null};
+      const aplicarServico = () => {
+        const vigente = dadosWidget.getValue?.();
+        if (!vigente || String(vigente.id) !== String(alvo.id)) {
+          dadosWidget.setValue(valorServico);
+        }
+      };
+      aplicarServico();
+      for (const atraso of [250, 600, 1200, 2200, 3500]) {
+        setTimeout(aplicarServico, atraso);
+      }
       const escolhido = dadosWidget.getValue?.();
       if (escolhido && String(escolhido.id) === String(alvo.id)) return true;
     }
@@ -328,10 +378,11 @@ export async function preencherFormulario(dados) {
       campos.solicitante = alvos.length ? "pendente" : "nao_localizado";
       if (await selecionarSolicitante(alvos, String(dados.solicitante).split(/[,;]/)[0].trim())) campos.solicitante = "preenchido";
     }
-    if (dados.servico) {
+    const servicoAlvo = resolverServico(dados);
+    if (servicoAlvo) {
       const alvos = localizarCampos('input.service, input[name*="Service" i], select[name*="Service" i]', ["servico"]).filter(emSecaoVisivel);
       campos.servico = alvos.length ? "pendente" : "nao_localizado";
-      if (await selecionarServico(alvos, String(dados.servico).trim())) campos.servico = "preenchido";
+      if (await selecionarServico(alvos, servicoAlvo)) campos.servico = "preenchido";
     }
   } catch {}
 
@@ -570,6 +621,13 @@ export async function preencherFormulario(dados) {
    campos.descricao = "preenchido";
    const confirmarTipo = interno('input.ticketTypeOption, input[type="radio"][name="TicketType"]', 'label.TicketTypeLabel.internal, label.ticket-type-label.internal');
    if (confirmarTipo) campos.tipo = confirmarTipo.checked ? "preenchido" : "pendente";
+   try {
+     const servicoFinal = resolverServico(dados);
+     if (servicoFinal) {
+       const alvosServico = localizarCampos('input.service, input[name*="Service" i], select[name*="Service" i]', ["servico"]).filter(emSecaoVisivel);
+       if (await selecionarServico(alvosServico, servicoFinal)) campos.servico = "preenchido";
+     }
+   } catch {}
    if (dados.exigir_interno && campos.tipo !== "preenchido") {
      throw new Error("Não foi possível confirmar o tipo Interno. Selecione INTERNO antes de salvar o ticket.");
    }

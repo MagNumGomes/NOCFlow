@@ -25,8 +25,8 @@ from .incidentes import FilaIncidentes, importar_eventos, CAMPOS_EVENTO, CAMPOS_
 from .extracao_local import CacheExtracao
 from .configuracao import carregar_config, diretorio_aplicacao, preparar_config_apis
 from .configuracao import salvar_nome_operador as gravar_nome_operador
-from .comunicados import gerar_assunto_email, gerar_template, validar_dados
-from .clipboard_windows import copiar_imagem
+from .comunicados import gerar_assunto_email, gerar_html_email, gerar_template, validar_dados
+from .clipboard_windows import copiar_html_texto, copiar_imagem
 from .extracao import extrair_dados
 from .movidesk import MovideskWorker
 from .rascunhos import RascunhoWorker
@@ -44,6 +44,8 @@ class NOCFlow:
         self.recortes_email = {}
         self.miniatura = None
         self.miniatura_chave = None
+        self.miniatura_previa = None
+        self.miniatura_previa_chave = None
         self.imagem_after = None
         self.operacao = None
         self.sequencia = 0
@@ -468,7 +470,15 @@ class NOCFlow:
         barra = ttk.Scrollbar(janela, orient="vertical")
         barra.pack(side="right", fill="y")
         texto = tk.Text(janela, wrap="word", font=("Segoe UI", 11), padx=16, pady=16, yscrollcommand=barra.set)
-        texto.insert("1.0", self.previa.get("1.0", "end-1c"))
+        texto.insert("1.0", self.previa.get("1.0", "end-1c").rstrip("\n"))
+        if self.canal.get() == "E-mail":
+            evidencia = self.imagem_email()
+            if evidencia is not None:
+                copia = evidencia.copy()
+                copia.thumbnail((620, 320))
+                janela.foto_evidencia = ImageTk.PhotoImage(copia, master=janela)
+                texto.insert("end", "\n\n")
+                texto.image_create("end", image=janela.foto_evidencia)
         texto.configure(state="disabled")
         texto.pack(fill="both", expand=True)
         barra.configure(command=texto.yview)
@@ -486,6 +496,7 @@ class NOCFlow:
         self.revisao += 1
         self.guardar_incidente()
         self.atualizar_resumo_evidencia()
+        self.atualizar_previews()
         self.agendar_salvamento()
 
     def atualizar_resumo_evidencia(self):
@@ -812,6 +823,13 @@ class NOCFlow:
         self.atualizar_fluxo()
         self.agendar_salvamento()
 
+    def imagem_email(self):
+        if self.imagem is None:
+            return None
+        if self.evidencia_escolha.get() == "Recorte" and all(c in self.recortes_email for c in CAMPOS_RECORTE):
+            return montar_recortes(self.imagem, self.recortes_email)
+        return self.imagem
+
     def atualizar_previews(self):
         if not hasattr(self, "previa"):
             return
@@ -822,6 +840,20 @@ class NOCFlow:
         self.previa.insert("1.0", gerar_template(dados, self.canal.get(), self.config.movidesk_url,
                                                 self.nome_operador.get(), self.modelo_comunicado.get(),
                                                 self.texto_atualizacao.get()))
+        if self.canal.get() == "E-mail":
+            evidencia = self.imagem_email()
+            if evidencia is not None:
+                chave = (id(self.imagem), self.evidencia_escolha.get(), tuple(sorted(self.recortes_email.items())))
+                if chave != self.miniatura_previa_chave:
+                    copia = evidencia.copy()
+                    copia.thumbnail((480, 180))
+                    self.miniatura_previa = ImageTk.PhotoImage(copia, master=self.root)
+                    self.miniatura_previa_chave = chave
+                self.previa.insert("end", "\n\n")
+                self.previa.image_create("end", image=self.miniatura_previa)
+            else:
+                self.miniatura_previa = None
+                self.miniatura_previa_chave = None
         self.previa.configure(state="disabled")
         item = self.fila.obter()
         copia = item["meta"].get("copias", {}).get(self.canal.get(), {}) if item else {}
@@ -1068,10 +1100,13 @@ class NOCFlow:
         self.imagem = imagem
         self.miniatura = None
         self.miniatura_chave = None
+        self.miniatura_previa = None
+        self.miniatura_previa_chave = None
         self.preview_imagem.configure(image="", text="Sem print (opcional)" if imagem is None else "")
         self.agendar_miniatura()
         self.atualizar_controles()
         self.atualizar_resumo_evidencia()
+        self.atualizar_previews()
 
     def agendar_miniatura(self, _=None):
         if self.imagem_after:
@@ -1170,6 +1205,7 @@ class NOCFlow:
             self.salvar_rascunho()
             self.atualizar_resumo_evidencia()
             self.atualizar_controles()
+            self.atualizar_previews()
             self.informar("Recortes salvos neste incidente. Escolha Recorte para usá-los no ticket ou copie a montagem.")
 
         EditorRecortes(self.root, imagem, self.recortes_email, confirmar)
@@ -1319,15 +1355,20 @@ class NOCFlow:
         if self.fechando or self.carregando or not self.validar(canal):
             return
         try:
-            pyperclip.copy(gerar_template(self.obter_dados(), canal, self.config.movidesk_url,
-                                          self.nome_operador.get(), self.modelo_comunicado.get(),
-                                          self.texto_atualizacao.get()))
+            texto = gerar_template(self.obter_dados(), canal, self.config.movidesk_url,
+                                   self.nome_operador.get(), self.modelo_comunicado.get(),
+                                   self.texto_atualizacao.get())
+            evidencia = self.imagem_email() if canal == "E-mail" else None
+            if canal == "E-mail" and evidencia is not None:
+                copiar_html_texto(texto, gerar_html_email(texto, evidencia), self.root.winfo_id())
+            else:
+                pyperclip.copy(texto)
             self.fila.obter()["meta"].setdefault("copias", {})[canal] = {"em": agora(), "modelo": self.modelo_comunicado.get()}
             registrar_evento(self.fila.obter(), "Mensagem copiada", self.modelo_comunicado.get(), self.config.nome_operador, canal)
             self.revisao += 1
             self.salvar_rascunho()
             self.atualizar_previews()
-            self.informar(f"{canal} copiado.")
+            self.informar("E-mail + print copiados." if canal == "E-mail" and evidencia is not None else f"{canal} copiado.")
         except Exception as exc:
             self.exibir_erro(f"Não foi possível copiar.\n\n{exc}")
 

@@ -409,7 +409,7 @@ O worker inicia operações de forma serial, mas continua processando os retorno
 - Aguarda documento pronto, assunto visível e editor disponível.
 - Interrompe se o assunto já tiver um conteúdo diferente do pedido.
 - Atualiza valores e dispara eventos `input`/`change`.
-- Tenta selecionar tipo/ação interna, categoria, urgência, solicitante (pela tag `Movidesk`), serviço (pela tag `Dataside`), tempo apontado (`00:03`, preservando tempo contabilizado) e atividade (`Observability`) conforme os controles encontrados.
+- Tenta selecionar tipo/ação interna, categoria, urgência, solicitante (pela tag `Movidesk`), serviço (pela tag de serviço/tecnologia), tempo apontado (`00:03`, preservando tempo contabilizado) e atividade (`Observability`) conforme os controles encontrados.
 - Suporta seletores nativos, Select2 e Kendo. Consultas Select2 são assíncronas, com timeout de 5 segundos.
 - Preenche Froala, TinyMCE, Kendo, iframe, textarea ou `contenteditable`, mantendo o print da evidência logo abaixo do link do Zabbix.
 - Preserva conteúdo e assinatura existentes e identifica o bloco inserido com `data-nocflow-conteudo="1"` para evitar duplicação.
