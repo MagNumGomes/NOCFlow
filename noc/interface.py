@@ -60,6 +60,7 @@ from .tokens_ia import ConsumoIA
 from .ui.comunicacao_view import montar_comunicacao
 from .ui.evidencias_view import montar_evidencias
 from .ui.tarefas import TarefasUI
+from .versao import __version__
 
 
 class NOCFlow:
@@ -128,7 +129,7 @@ class NOCFlow:
         self.consumo_ia = ConsumoIA()
         self.resumo_tokens = tk.StringVar(root, self.consumo_ia.resumo(self.config))
 
-        self.root.title("NOCFlow")
+        self.root.title(f"NOCFlow {__version__}")
         altura = min(720, self.root.winfo_screenheight() - 90)
         self.root.geometry(f"900x{max(520, altura)}")
         self.root.minsize(600, 520)

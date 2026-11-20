@@ -639,6 +639,8 @@ As durações de salvamento incluem a espera pela confirmação na UI; a seriali
 
 ## Dependências e empacotamento
 
+Consulte [Dependências, CI e releases](releases.md) para o fluxo automatizado. `VERSION` é a fonte única; `scripts/versionar.py --check` confere manifesto e userscripts. `scripts/requirements-windows.txt` fixa o ambiente homologado de execução/testes/build. O CI Windows valida fonte e executável; pip-audit consulta vulnerabilidades em job separado. Tags correspondentes à versão, em commits integrados à `main`, publicam ZIP e checksum somente após todos os checks passarem.
+
 | Arquivo | Finalidade |
 |---|---|
 | `requirements.txt` | Pillow, pyperclip, python-dotenv, tzdata, ReportLab, SDKs Groq/Gemini e projeções WinRT condicionadas ao Windows. |
@@ -657,7 +659,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 Etapas:
 
 1. Criar/reutilizar `.venv-build` e instalar os requisitos de build.
-2. Conferir se o executável de destino está aberto.
+2. Validar o snapshot de dependências e a versão; conferir se o executável de destino está aberto.
 3. Regenerar os userscripts (`scripts/gerar_userscripts.py`).
 4. Executar PyInstaller com `scripts/NOC.spec`, usando `build` como diretório de trabalho.
 5. Copiar `README.md`, `docs/` (`manual.md` e `arquitetura.md`), `scripts/LEIA-ME-executavel.txt`, `scripts/Abrir configuracoes.cmd` e `tampermonkey/` para o pacote.

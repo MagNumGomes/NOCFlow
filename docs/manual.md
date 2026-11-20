@@ -2,7 +2,7 @@
 
 Este manual acompanha o operador desde a instalação até a comunicação de incidentes, o uso da **Central Operacional**, a geração de relatórios e a passagem de turno. A extensão e os painéis do navegador utilizam o nome **NOCFlow — Zabbix e Movidesk**.
 
-Versão atual dos recursos de fluxo, extensão e interface: **2.2.3**.
+Consulte a versão no título do aplicativo e o [histórico de versões](../CHANGELOG.md). Aplicativo, extensão e userscripts compartilham a versão definida em `VERSION`.
 
 Consulte também a [Apresentação do Projeto](../README.md) e a [Arquitetura Técnica](arquitetura.md).
 
@@ -41,7 +41,7 @@ Selecione a empresa no dropdown e use **Copiar Para** para colar no campo Para d
 - Windows 10 ou 11.
 - Microsoft Edge, com acesso e login nas instâncias utilizadas de Zabbix e Movidesk.
 - Português ou Inglês instalado no Windows para a leitura de imagens por OCR nativo.
-- Python 3.10+ apenas quando executado pelo código-fonte ou para gerar um novo executável.
+- Python 3.12 x64 recomendado e homologado para executar pelo código-fonte ou gerar um executável; as dependências exigem no mínimo Python 3.11.
 
 O fluxo principal funciona **100% localmente e sem chaves de IA**. O acesso aos sites depende da rede da organização; o processamento de capturas, fila, regras operacionais, relatórios e templates é local. A complementação por IA é opcional e exige conexão apenas com o provedor configurado (Groq e/ou Gemini).
 
@@ -77,7 +77,7 @@ O aplicativo prepara o `.env` automaticamente a partir do exemplo e acrescenta o
 3. Ative a chave **Modo do desenvolvedor**.
 4. Clique em **Carregar sem compactação**.
 5. Selecione a pasta cujo caminho foi copiado no passo 2.
-6. Confira o cartão **NOCFlow — Zabbix e Movidesk** (versão 2.2.3) e mantenha a extensão habilitada.
+6. Confira o cartão **NOCFlow — Zabbix e Movidesk** e mantenha a extensão habilitada. A versão deve corresponder à exibida no título do aplicativo.
 7. Recarregue as páginas abertas do Zabbix e do Movidesk com **F5**.
 
 Instale a extensão no mesmo perfil do Edge em que você já utiliza o Zabbix, o Movidesk e o WhatsApp Web. No executável, a pasta preparada fica em `%LOCALAPPDATA%\NOCFlow\edge_extension`; pelo código-fonte, em `.noc_data/edge_extension` (ou `edge_extension/` na raiz). As origens customizadas do Zabbix são preservadas em `.noc_data/extensao.json` durante atualizações.

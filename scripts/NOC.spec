@@ -9,6 +9,7 @@ dados += copy_metadata("groq", recursive=True)
 dados += copy_metadata("winrt-runtime")
 dados += collect_data_files("tzdata")
 dados += [(str(raiz / ".env.example"), ".")]
+dados += [(str(raiz / "VERSION"), ".")]
 dados += [(str(raiz / "edge_extension"), "edge_extension")]
 
 analise = Analysis(
