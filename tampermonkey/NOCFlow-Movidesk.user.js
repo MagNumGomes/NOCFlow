@@ -14,25 +14,76 @@
   if (globalThis.nocflowUtilitariosMovidesk || globalThis.nocUtilitariosMovidesk) return;
   globalThis.nocflowUtilitariosMovidesk = globalThis.nocUtilitariosMovidesk = true;
   let timer;
+  const visivel = el => Boolean(el?.getClientRects().length) && getComputedStyle(el).visibility !== "hidden";
+  const seletoresAssunto = 'input#TicketSubject:not([type="hidden"]), input.subject:not([type="hidden"]), input[name="Subject"]:not([type="hidden"]), input[id*="Subject" i]:not([type="hidden"]), input[placeholder*="Assunto" i]:not([type="hidden"])';
+  function escopoAtivo() {
+    const abas = Array.from(document.querySelectorAll("section.tab-ticket.ticket.active, .tab-pane.active, form.ticket-form, .container-ticket")).filter(visivel);
+    if (abas.length === 1) return abas[0];
+    const inputs = Array.from(document.querySelectorAll(seletoresAssunto)).filter(visivel);
+    if (inputs.length === 1) {
+      return inputs[0].closest("section.tab-ticket, .tab-pane, form.ticket-form, .container-ticket, form") || document;
+    }
+    return abas[0] || document;
+  }
+  function numeroNoEscopo(raiz) {
+    if (!raiz || raiz === document) return "";
+    const hidden = Array.from(raiz.querySelectorAll(".ticket-number-hidden, input[name='Number'], input[name='Id'], input[id*='TicketNumber' i], input[id*='TicketId' i]"))
+      .map(el => el.value?.trim())
+      .find(val => /^\d+$/.test(val));
+    if (hidden) return hidden;
+    const texto = Array.from(raiz.querySelectorAll(".ticket-number, .ticket-header-number, [data-ticket-number], [data-ticket-id]"))
+      .filter(visivel)
+      .map(el => (el.getAttribute("data-ticket-number") || el.getAttribute("data-ticket-id") || el.textContent || "").trim())
+      .find(val => /^\d+$/.test(val));
+    if (texto) return texto;
+    const attr = [raiz.getAttribute?.("data-ticket-number"), raiz.getAttribute?.("data-ticket-id"), raiz.id]
+      .map(v => String(v || "").match(/\b(\d{4,})\b/)?.[1])
+      .find(Boolean);
+    return attr || "";
+  }
+  function numeroAbaAtiva() {
+    const guias = Array.from(document.querySelectorAll(
+      '.nav-tabs li.active, .nav-tabs .active, [role="tab"][aria-selected="true"], .tab-header .active, .tabs-ticket .active'
+    )).filter(visivel);
+    for (const guia of guias) {
+      const m = (guia.getAttribute("title") || guia.getAttribute("data-original-title") || guia.textContent || "")
+        .trim()
+        .match(/\b(\d{4,})\b/);
+      if (m) return m[1];
+    }
+    return "";
+  }
   function numero() {
+    const modal = Array.from(document.querySelectorAll(".protocol-modal")).find(visivel);
+    const modalNum = modal?.querySelector(".ticket-number")?.textContent?.trim();
+    if (/^\d+$/.test(modalNum)) return modalNum;
+    const escopo = escopoAtivo();
+    const numEscopo = numeroNoEscopo(escopo);
+    if (numEscopo) return numEscopo;
+    const numAba = numeroAbaAtiva();
+    if (numAba) return numAba;
     const url = new URL(location.href);
     const match = url.pathname.match(/\/Ticket\/(?:Edit|Create)\/(\d+)\/?$/i);
     const id = match?.[1] || url.searchParams.get("id") || "";
     if (/^\d+$/.test(id)) return id;
-    const modal = document.querySelector(".protocol-modal");
-    const modalNum = modal?.getClientRects().length && getComputedStyle(modal).visibility !== "hidden" ? modal.querySelector(".ticket-number")?.textContent?.trim() : "";
-    if (/^\d+$/.test(modalNum)) return modalNum;
-    const hiddenNum = document.querySelector(".ticket-number-hidden, input[name='Number']")?.value?.trim();
-    if (/^\d+$/.test(hiddenNum)) return hiddenNum;
+    const hiddenGlobal = Array.from(document.querySelectorAll(".ticket-number-hidden, input[name='Number']"))
+      .filter(el => {
+        const aba = el.closest("section.tab-ticket, .tab-pane, form.ticket-form, .container-ticket");
+        return !aba || visivel(aba);
+      })
+      .map(el => el.value?.trim())
+      .find(val => /^\d+$/.test(val));
+    if (hiddenGlobal) return hiddenGlobal;
     return "";
   }
   function assunto() {
-    const escopo = document.querySelector("section.tab-ticket.ticket.active, .tab-pane.active") || document;
-    const input = escopo.querySelector('input.subject:not([type="hidden"]), input[name="Subject"]:not([type="hidden"]), input[id*="Subject" i]:not([type="hidden"]), input#TicketSubject') ||
-      Array.from(document.querySelectorAll('input[name="Subject"], input[id*="Subject" i], input#TicketSubject')).find(el => el.type !== "hidden" && el.getClientRects().length);
-    if (input?.getClientRects().length && input.value.trim()) return input.value.trim();
-    const el = document.querySelector('[data-field="Subject"], .ticket-subject, #ticketSubject');
-    return (el?.innerText || "").trim();
+    const escopo = escopoAtivo();
+    const input = Array.from(escopo.querySelectorAll(seletoresAssunto)).find(visivel) ||
+      Array.from(document.querySelectorAll(seletoresAssunto)).find(visivel);
+    if (input && input.value.trim()) return input.value.trim();
+    const el = Array.from(escopo.querySelectorAll('[data-field="Subject"], .ticket-subject, #ticketSubject')).find(visivel) ||
+      Array.from(document.querySelectorAll('[data-field="Subject"], .ticket-subject, #ticketSubject')).find(visivel);
+    return (el?.innerText || el?.textContent || "").trim();
   }
   function linkTicket() {
     const id = numero();

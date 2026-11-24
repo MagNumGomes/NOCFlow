@@ -327,6 +327,34 @@ class PreenchimentoDOMTests(unittest.TestCase):
                 self.assertEqual(page.get_by_role("button", name="Copiar link", exact=True).count(), 0)
                 page.get_by_role("button", name="Copiar template", exact=True).click()
                 self.assertEqual(page.evaluate("window.copiado"), "123456\nCPU - host\nhttps://empresa.movidesk.com/Ticket/Edit/123456")
+                # Multi-abas internas do Movidesk: ignora as abas ocultas e a URL do 1º ticket, copiando a aba visível atual.
+                page.set_content("""
+                <ul class="nav-tabs">
+                  <li><a>929101 - Primeiro ticket</a></li>
+                  <li class="active"><a>929016 - Terceiro ticket</a></li>
+                </ul>
+                <section class="tab-ticket ticket active" style="display:none">
+                  <input class="ticket-number-hidden" value="929101">
+                  <input id="TicketSubject" value="Assunto do primeiro ticket (oculto)">
+                </section>
+                <section class="tab-ticket ticket active" style="display:none">
+                  <input class="ticket-number-hidden" value="926704">
+                  <input id="TicketSubject" value="Assunto do segundo ticket (oculto)">
+                </section>
+                <section class="tab-ticket ticket active">
+                  <input class="ticket-number-hidden" value="929016">
+                  <input id="TicketSubject" value="SQLServer | DIGASDB1 - Alerta crítico">
+                </section>
+                """)
+                page.evaluate("history.replaceState({}, '', '/Ticket/Edit/929101')")
+                page.evaluate("window.nocflowUtilitariosMovidesk = window.nocUtilitariosMovidesk = false")
+                page.add_script_tag(content=(raiz / "edge_extension/movidesk.js").read_text(encoding="utf-8"))
+                page.locator("#nocflow-movidesk-utilitarios summary").click()
+                page.get_by_role("button", name="Copiar template", exact=True).click()
+                self.assertEqual(
+                    page.evaluate("window.copiado"),
+                    "929016\nSQLServer | DIGASDB1 - Alerta crítico\nhttps://empresa.movidesk.com/Ticket/Edit/929016",
+                )
             finally:
                 browser.close()
 
