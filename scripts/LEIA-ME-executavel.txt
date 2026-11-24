@@ -1,78 +1,30 @@
-NOCFLOW 2.2.3 — LOCAL PRIMEIRO
+NOCFLOW 2.3.0 — GUIA RÁPIDO DO EXECUTÁVEL
 
-ABRIR
-Abra NOCFlow.exe. Mantenha _internal junto dele.
-Python e VS Code não são necessários. Microsoft Edge é necessário.
-O fluxo principal funciona sem chaves de IA.
+1. ABRIR O APLICATIVO
+- Abra NOCFlow.exe (mantenha a subpasta _internal sempre junto dele).
+- Não é necessário instalar Python. Apenas o Microsoft Edge é necessário.
+- O fluxo principal (Zabbix, Movidesk, OCR local, fila e comunicados) funciona 100% offline/local, sem chaves de IA.
 
-INSTALAR / ATUALIZAR A EXTENSÃO
-1. No NOCFlow, menu "... > Instalar extensão do Edge".
-2. Em edge://extensions/, ative Modo do desenvolvedor.
-3. Carregue a pasta indicada: %LOCALAPPDATA%\NOCFlow\edge_extension.
-4. Use o perfil já logado no Zabbix e Movidesk.
-Ao atualizar, abra o NOCFlow, recarregue a extensão e as páginas dos sites.
+2. CONFIGURAR DOMÍNIOS (1ª VEZ)
+- Movidesk: no NOCFlow, abra "... > Configurações" (ou execute "Abrir configuracoes.cmd") e defina MOVIDESK_URL=https://suaempresa.movidesk.com.
+- Zabbix: edite %LOCALAPPDATA%\NOCFlow\.noc_data\extensao.json com os endereços HTTPS do seu Zabbix em "zabbix_origens", salve e reinicie o aplicativo.
 
-IMPORTAR ALERTAS SEM IA
-1. No aplicativo, "Conectar" na faixa Zabbix; confira ali o estado e o prazo.
-2. No Zabbix, expanda "NOCFlow — Zabbix e Movidesk" e use "Enviar ao NOCFlow".
-Alternativa: "Mais opções > Copiar dados para NOCFlow" e "Importar dados" no NOCFlow.
-Os userscripts Tampermonkey estão na pasta tampermonkey deste pacote.
-Use extensão ou userscript equivalente na página para evitar botões duplicados.
-Na lista de problemas, selecione até 100 eventos para importar em lote.
-Reconecte após reiniciar o aplicativo/navegador ou depois de 12 horas.
+3. INSTALAR / ATUALIZAR A EXTENSÃO DO EDGE
+- No NOCFlow, abra "... > Instalar extensão do Edge".
+- Em edge://extensions/, ative o "Modo do desenvolvedor" e clique em "Carregar sem compactação" selecionando a pasta indicada (%LOCALAPPDATA%\NOCFlow\edge_extension).
+- Ao atualizar o aplicativo, clique em "Recarregar" na extensão e atualize as abas do Zabbix e Movidesk com F5.
 
-FILA E MOVIDESK
-"Fila" abre busca, filtros, etapas e contadores; "Voltar" retorna ao editor.
-"Próximo" avança aos pendentes. Arquive ou reabra atendimentos pela fila.
-"+ Novo" preserva os anteriores; "... > Desfazer remoção" recupera itens removidos nesta sessão.
-Recapturas da mesma instância + eventid preservam revisões. Compare diferenças em "Pendências".
-Alertas recebidos pela extensão mantêm sua edição; abra-os pelo aviso de recebidos.
-"Criar ticket" prepara o formulário; "Voltar ao formulário" retoma a guia existente;
-"Abrir ticket #..." abre o chamado já vinculado. Revise os resultados por campo em
-"Pendências", complete Solicitante/Serviço e salve manualmente no Movidesk.
-O número retorna ao incidente original, mesmo que outro esteja selecionado.
-Mantenha o NOCFlow aberto; se fechar/reiniciar ou expirar, digite o número manualmente.
-Para preparar outro formulário após falha, confira a guia anterior e use "Pendências".
+4. IMPORTAR DO ZABBIX E CRIAR TICKET NO MOVIDESK
+- Clique em "Conectar" no topo do NOCFlow (a sessão dura 10 horas).
+- No Zabbix, abra o painel "NOCFlow — Zabbix e Movidesk" e clique em "Enviar ao NOCFlow" (ou selecione até 100 eventos na lista).
+- No NOCFlow, clique em "Criar ticket". O formulário do Movidesk será preenchido com Tipo Interno, Título, Link + Print (com 1 linha em branco antes da assinatura), Categoria, Urgência, Solicitante/Serviço (via tags) e Horas (00:03 / Observability).
+- Salve manualmente o ticket no Movidesk; o número retornará sozinho para o NOCFlow.
 
-PRINT E OCR
-Capture com Win+Shift+S e use "Ler print".
-O OCR do Windows e as regras locais não consomem tokens.
-Instale Português ou Inglês nas configurações de idioma, se solicitado.
-Para um evento diferente disponível apenas como imagem, use "+ Novo".
+5. COMUNICADOS (WHATSAPP, TEAMS E E-MAIL)
+- Na aba Comunicar, alterne em 1 clique entre WhatsApp (Alt+1), Teams (Alt+2) e E-mail (Alt+3).
+- No E-mail, cadastre empresas em "+ Empresa", copie Para, Cc e Assunto, escolha entre Print completo ou Recorte no rodapé da prévia e clique em "Copiar e-mail" (preserva rigorosamente as quebras de linha e anexa a imagem).
 
-IA OPCIONAL
-"Completar com IA" (menu ...) pode resolver campos ausentes via Groq (texto) e Gemini
-(visão, quando necessário). Configure as chaves em "... > Configurações" e reinicie.
-IA_AUTOMATICA=false é o padrão. Se ativar true, o botão indicará "Ler print + IA".
-Dados locais são preservados em falhas; resultados completos usam cache de sessão.
-O painel de tokens mostra uso reportado, não uma estimativa de faturamento.
-GEMINI_MAX_OUTPUT_TOKENS e GROQ_MAX_COMPLETION_TOKENS limitam a saída,
-não os tokens de entrada nem a cota total da conta.
-
-COMUNICADOS E EVIDÊNCIAS
-Na aba Comunicar, escolha WhatsApp, Teams ou e-mail e o modelo: Abertura normal
-(padrão, sem saudação) ou Abertura inicial (com saudação de horário no WhatsApp).
-O horário da última cópia é salvo por canal; copiar não confirma o envio.
-Use a rolagem ou "Ampliar prévia" para conferir o texto completo.
-Em Comunicar > WhatsApp, informe Seu nome e clique em Salvar nome uma vez.
-O cabeçalho ficará como "João - Equipe NOC", inclusive após reabrir o aplicativo.
-Use "Editar nome" para alterar a identificação salva.
-Na aba Evidências, adicione/amplie o print, salve os recortes e copie a imagem.
-Os recortes sobrevivem à troca de incidente e ao reinício. Escolha explicitamente
-"Print completo" ou "Recorte" em "Imagem no ticket".
-No e-mail, copie assunto e corpo em Comunicar; copie o recorte em Evidências.
-No Zabbix há "Copiar link + imagem", além de imagem e e-mail + imagem.
-No Movidesk, "Copiar template" copia número, assunto e link.
-Para evidência exata dos pixels da tela, use Win+Shift+S.
-
-DADOS E CONFIGURAÇÃO
-Use Abrir configuracoes.cmd. Reinicie após editar o .env.
-Configuração: %LOCALAPPDATA%\NOCFlow\.env
-Fila, prints e logs: %LOCALAPPDATA%\NOCFlow\.noc_data
-O login permanece no Edge. Fechar o NOCFlow não fecha suas guias.
-
-ATUALIZAR / DISTRIBUIR
-Copie a pasta NOCFlow inteira. Os dados locais sobrevivem a builds.
-Rascunhos antigos são migrados para a fila no próximo salvamento.
-Veja docs/manual.md neste pacote para o passo a passo e solução de problemas.
-README.md apresenta o projeto; docs/arquitetura.md descreve sua estrutura técnica.
+6. DOCUMENTAÇÃO COMPLETA
+- Manual de uso detalhado: docs\manual.md
+- Arquitetura técnica: docs\arquitetura.md
+- Releases e dependências: docs\releases.md

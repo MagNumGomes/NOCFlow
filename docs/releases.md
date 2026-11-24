@@ -10,7 +10,7 @@ Actions são fixadas por SHA, com atualização pelo Dependabot. Os jobs de test
 
 ## Snapshot homologado
 
-`scripts/requirements-windows.txt` fixa execução, testes e ferramentas de build para Windows x64/Python 3.12. `requirements.txt` e `requirements-dev.txt` descrevem os requisitos funcionais; `scripts/constraints-build.txt` conserva as restrições do SDK Google legado. O CI instala esses arquivos juntos para detectar incompatibilidades.
+`scripts/requirements-windows.txt` fixa execução, testes e ferramentas de build para Windows x64/Python 3.12, incluindo hashes de todas as dependências transitivas. `requirements.txt` e `requirements-dev.txt` descrevem as entradas de resolução. O SDK mantido `google-genai` substitui as constraints do SDK legado. CI/build instalam exclusivamente o lock com `--require-hashes --only-binary=:all:`.
 
 O build usa o mesmo snapshot. Dependências de teste instaladas no ambiente de build são excluídas do pacote pelo PyInstaller. Isso estabiliza as versões Python; não promete binários idênticos bit a bit nem fixa o patch do Windows/Python ou o navegador.
 
@@ -18,7 +18,7 @@ Para validar uma atualização em ambiente limpo:
 
 ```powershell
 python -m venv .venv-build
-.\.venv-build\Scripts\python.exe -m pip install -r scripts/requirements-windows.txt -r requirements-dev.txt -r scripts/requirements-build.txt
+.\.venv-build\Scripts\python.exe -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r scripts/requirements-windows.txt
 .\.venv-build\Scripts\python.exe -m pip check
 $env:NOC_TEST_BROWSER = "1"
 .\.venv-build\Scripts\python.exe -m playwright install chromium --no-shell
@@ -27,7 +27,7 @@ $env:NOC_TEST_BROWSER = "1"
 .\build.ps1 -SomentePacote
 ```
 
-O Dependabot abre PRs semanais para `dev`, agrupando atualizações Python e Actions separadamente. Ao mudar uma dependência, atualize as constraints relacionadas e inclua no snapshot qualquer nova dependência transitiva. Não use `pip freeze` de um ambiente pessoal com pacotes alheios ao projeto. Rejeite atualizações com testes ou auditoria falhando.
+O Dependabot abre PRs semanais para `dev`, agrupando atualizações Python e Actions separadamente. Ao mudar uma dependência, regenere o lock usando `scripts/requirements-windows.in` e pip-tools com hashes no Windows/Python 3.12. Não use `pip freeze` de um ambiente pessoal com pacotes alheios ao projeto. Rejeite atualizações com testes ou auditoria falhando.
 
 O auditor é instalado separadamente a partir de `scripts/requirements-audit.txt`:
 
@@ -44,7 +44,7 @@ python -m pip_audit -r scripts/requirements-windows.txt --no-deps --disable-pip
 - MINOR: funcionalidade nova compatível.
 - MAJOR: quebra de compatibilidade.
 
-O aplicativo exibe a versão no título e no smoke. O arquivo acompanha o pacote. Para atualizar, edite `VERSION`, registre as mudanças em `CHANGELOG.md` e execute:
+O aplicativo exibe a versão no título e no smoke. O arquivo acompanha o pacote. Para atualizar, edite `VERSION`, registre as mudanças em `docs/CHANGELOG.md` e execute:
 
 ```powershell
 python scripts/versionar.py
@@ -54,6 +54,8 @@ python scripts/versionar.py --check
 O comando sincroniza o manifesto e os dois userscripts; o modo `--check` apenas verifica. O CI rejeita divergências. As versões são compartilhadas entre aplicativo, extensão e userscripts. Pré-releases com sufixo ainda não são suportadas pelo sincronizador, para manter compatibilidade com o manifesto do Edge.
 
 ## Publicação
+
+Releases exigem certificado Authenticode válido. Configure os secrets `NOCFLOW_SIGN_PFX_BASE64` e `NOCFLOW_SIGN_PFX_PASSWORD`; o fluxo bloqueia tags sem assinatura. O pacote inclui SBOM CycloneDX e proveniência com hashes. Veja a [Arquitetura Técnica](arquitetura.md) para detalhes dos controles de segurança.
 
 1. Integre as mudanças de `dev` na `main` por PR com os checks aprovados.
 2. No commit integrado, crie e envie uma tag anotada correspondente a `VERSION`:

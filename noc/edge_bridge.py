@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .configuracao import diretorio_recursos, url_valida
 from .incidentes import MAX_IMPORTACAO, importar_eventos
+from .infra.auditoria import registrar
 from .infra.persistencia import escrever_bytes, escrever_texto
 
 PORTA_EDGE = 18764
@@ -42,7 +43,14 @@ def abrir_no_edge(url):
     )
 
 
-def preparar_extensao(diretorio):
+def preparar_extensao(diretorio, movidesk_url=None):
+    from dotenv import dotenv_values
+
+    movidesk_url = movidesk_url or os.getenv("MOVIDESK_URL") or dotenv_values(diretorio / ".env").get("MOVIDESK_URL") or "https://empresa.movidesk.com"
+    if not url_valida(movidesk_url) or "*" in movidesk_url:
+        raise ValueError("Configure uma origem HTTPS exata para o Movidesk.")
+    movidesk = urlsplit(movidesk_url)
+    origem_movidesk = f"{movidesk.scheme}://{movidesk.netloc}"
     origem = diretorio_recursos() / "edge_extension"
     destino = diretorio / "edge_extension"
     if origem.resolve() == destino.resolve():
@@ -60,7 +68,7 @@ def preparar_extensao(diretorio):
     if not isinstance(dominios, list) or not dominios or any(
             not isinstance(url, str) or not url_valida(url) or "*" in url or
             urlsplit(url).path not in ("", "/") or urlsplit(url).query or urlsplit(url).fragment for url in dominios):
-        raise ValueError("Configure zabbix_origens em .noc_data/extensao.json com origens HTTP/HTTPS válidas.")
+        raise ValueError("Configure zabbix_origens em .noc_data/extensao.json com origens HTTPS válidas.")
     dominios = list(dict.fromkeys(url.rstrip("/") for url in dominios))
     configuracao.parent.mkdir(parents=True, exist_ok=True)
     if not configuracao.exists():
@@ -73,6 +81,10 @@ def preparar_extensao(diretorio):
         conteudo = arquivo.read_bytes()
         if nome == "manifest.json":
             manifesto = json.loads(conteudo)
+            manifesto["host_permissions"] = [origem_movidesk + "/*" if url == "https://empresa.movidesk.com/*" else url for url in manifesto["host_permissions"]]
+            for script in manifesto["content_scripts"]:
+                if "movidesk.js" in script["js"]:
+                    script["matches"] = [origem_movidesk + "/*"]
             antigos = {url for script in manifesto["content_scripts"] if "zabbix.js" in script["js"] for url in script["matches"]}
             manifesto["host_permissions"] = [url for url in manifesto["host_permissions"] if url not in antigos] + [url + "/*" for url in dominios]
             for script in manifesto["content_scripts"]:
@@ -109,6 +121,7 @@ class ServidorLimitado(ThreadingHTTPServer):
 
     def process_request(self, request, client_address):
         if not self.vagas.acquire(blocking=False):
+            registrar("ponte_saturada")
             self.shutdown_request(request)
             return
         request.settimeout(self.timeout_cliente)
@@ -154,6 +167,8 @@ class EdgeBridge:
                 pass  # Tokens não devem aparecer em logs HTTP.
 
             def responder(self, status, conteudo, tipo="application/json; charset=utf-8"):
+                if status >= 400:
+                    registrar("ponte_rejeitada" if status in (403, 404) else "ponte_payload")
                 corpo = conteudo.encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", tipo)

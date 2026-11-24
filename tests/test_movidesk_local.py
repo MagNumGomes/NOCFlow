@@ -83,7 +83,11 @@ class MovideskLocalTests(unittest.TestCase):
         def aguardar_evento(tipo, timeout=20):
             limite = time.monotonic() + timeout
             while time.monotonic() < limite:
-                evento = eventos.get(timeout=max(0.01, limite - time.monotonic()))
+                navegador.pages[0].wait_for_timeout(25)
+                try:
+                    evento = eventos.get_nowait()
+                except queue.Empty:
+                    continue
                 if evento[0] == "erro":
                     self.fail(evento[2])
                 if evento[0] == tipo:
@@ -92,30 +96,35 @@ class MovideskLocalTests(unittest.TestCase):
 
         try:
             with tempfile.TemporaryDirectory() as pasta, sync_playwright() as playwright:
+                url_fixture = "https://fixture.test"
                 raiz = Path(pasta)
                 extensao = raiz / "extensao"
                 shutil.copytree(Path(__file__).resolve().parents[1] / "edge_extension", extensao)
                 # Só a fixture local recebe permissão extra; a extensão distribuída usa Movidesk.
                 manifest = json.loads((extensao / "manifest.json").read_text(encoding="utf-8"))
-                manifest["content_scripts"][1]["matches"].append("http://127.0.0.1/*")
-                manifest["content_scripts"][2]["matches"].append("http://127.0.0.1/*")
+                manifest["host_permissions"].append(url_fixture + "/*")
+                manifest["content_scripts"][1]["matches"].append(url_fixture + "/*")
+                manifest["content_scripts"][2]["matches"].append(url_fixture + "/*")
                 (extensao / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
                 for nome in ("background.js", "bridge.js"):
                     arquivo = extensao / nome
-                    arquivo.write_text(arquivo.read_text(encoding="utf-8").replace("http://127.0.0.1:18764", ponte.url).replace("https://zabbix.example.com", f"http://127.0.0.1:{servidor.server_port}"), encoding="utf-8")
+                    arquivo.write_text(arquivo.read_text(encoding="utf-8").replace("http://127.0.0.1:18764", ponte.url).replace("https://zabbix.example.com", url_fixture), encoding="utf-8")
                 # Edge restringe --load-extension; o Chromium testa a mesma extensão MV3.
                 navegador = playwright.chromium.launch_persistent_context(
                     str(raiz / "perfil"), channel="chromium", headless=True,
                     args=[f"--disable-extensions-except={extensao}", f"--load-extension={extensao}"],
                 )
-                worker = MovideskWorker(Config(raiz, movidesk_url=f"http://127.0.0.1:{servidor.server_port}", timeout_login=25), eventos, abrir=aberturas.put, ponte=ponte)
+                # Origem HTTPS virtual interceptada só na fixture; nenhuma conexão externa/TLS é feita.
+                navegador.route(url_fixture + "/**", lambda route: route.fulfill(response=route.fetch(
+                    url=route.request.url.replace(url_fixture, f"http://127.0.0.1:{servidor.server_port}"))))
+                worker = MovideskWorker(Config(raiz, movidesk_url=url_fixture, timeout_login=25), eventos, abrir=aberturas.put, ponte=ponte)
                 try:
                     if not navegador.service_workers:
                         navegador.wait_for_event("serviceworker", timeout=10000)
                     service_worker = navegador.service_workers[0]
-                    navegador.add_cookies([{"name": "sessao", "value": "ja-logado", "url": f"http://127.0.0.1:{servidor.server_port}"}])
+                    navegador.add_cookies([{"name": "sessao", "value": "ja-logado", "url": url_fixture}])
                     existente = navegador.new_page()
-                    existente.goto(f"http://127.0.0.1:{servidor.server_port}/")
+                    existente.goto(url_fixture + "/")
                     worker.start()
                     dados = dict.fromkeys(CAMPOS, "")
                     dados.update(alerta='CPU ` ${window.injetado=true} <script>erro</script>', servidor="host-01", severidade="Average", horario="10:42")
@@ -156,7 +165,7 @@ class MovideskLocalTests(unittest.TestCase):
                     retorno = aguardar_evento("ticket_recebido")
                     self.assertEqual(retorno[1], "2")
                     self.assertEqual(retorno[2]["ticket"], "456")
-                    pagina.goto(f"http://127.0.0.1:{servidor.server_port}/Ticket/Edit/123")
+                    pagina.goto(url_fixture + "/Ticket/Edit/123")
                     retorno = aguardar_evento("ticket_recebido")
                     self.assertEqual(retorno[1], "1")
                     self.assertEqual(retorno[2]["ticket"], "123")
@@ -182,14 +191,14 @@ class MovideskLocalTests(unittest.TestCase):
                     modal.locator(".protocol-modal").evaluate("el => el.style.display = 'block'")
                     retorno = aguardar_evento("ticket_recebido")
                     self.assertEqual(retorno[1], "5")
-                    self.assertEqual(retorno[2], {"ticket": "789", "url": f"http://127.0.0.1:{servidor.server_port}/Ticket/Edit/789"})
+                    self.assertEqual(retorno[2], {"ticket": "789", "url": url_fixture + "/Ticket/Edit/789"})
                     # Conecta e importa um evento pela extensão real, sem clipboard/API de IA.
                     worker.comandos.put((4, {"_conectar": True}))
                     conexao = navegador.new_page()
                     conexao.goto(aberturas.get(timeout=5))
                     aguardar_evento("conexao_ok")
                     zabbix = navegador.new_page()
-                    zabbix.goto(f"http://127.0.0.1:{servidor.server_port}/tr_events.php?triggerid=1&eventid=99")
+                    zabbix.goto(url_fixture + "/tr_events.php?triggerid=1&eventid=99")
                     antes = service_worker.evaluate("""async tabUrl => {
                         const [tab] = await chrome.tabs.query({url: tabUrl});
                         const [res] = await chrome.scripting.executeScript({target: {tabId: tab.id}, func: () => typeof globalThis.html2canvas});

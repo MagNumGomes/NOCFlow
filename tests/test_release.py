@@ -25,7 +25,8 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as pasta:
             raiz = Path(pasta)
             (raiz / "VERSION").write_text("2.3.0", encoding="utf-8")
-            (raiz / "CHANGELOG.md").write_text("## [2.3.0]\nTeste\n\n## [2.2.3]\nAnterior", encoding="utf-8")
+            (raiz / "docs").mkdir(exist_ok=True)
+            (raiz / "docs/CHANGELOG.md").write_text("## [2.3.0]\nTeste\n\n## [2.2.3]\nAnterior", encoding="utf-8")
             pacote = raiz / "dist/NOCFlow"
             (pacote / "_internal").mkdir(parents=True)
             executavel = pacote / "NOCFlow.exe"

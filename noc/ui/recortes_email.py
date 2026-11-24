@@ -5,10 +5,10 @@ from tkinter import ttk
 
 from PIL import ImageTk
 
-from .services.evidencias import CAMPOS_RECORTE, montar_recortes
-from .services.evidencias import caixa_original as caixa_original
-from .ui.imagem_canvas import ImagemCanvas
-from .ui.tarefas import TarefasUI
+from ..services.evidencias import CAMPOS_RECORTE, montar_recortes
+from ..services.evidencias import caixa_original as caixa_original
+from .imagem_canvas import ImagemCanvas
+from .tarefas import TarefasUI
 
 CORES = ("#38bdf8", "#a78bfa", "#fb923c")
 

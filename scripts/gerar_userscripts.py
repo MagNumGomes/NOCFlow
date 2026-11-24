@@ -9,7 +9,7 @@ def artefatos():
     versao = (RAIZ / "VERSION").read_text(encoding="utf-8").strip()
     for nome, descricao, matches, arquivos in (
         ("Zabbix", "Coleta local de eventos, seleção em lote e imagens sob demanda", ["https://zabbix.example.com/*", "https://zabbix-secondary.example.com/*"], ["coletor.js", "zabbix.js"]),
-        ("Movidesk", "Copia número, assunto, link e template sem polling periódico", ["https://*.movidesk.com/*"], ["movidesk.js"]),
+        ("Movidesk", "Copia número, assunto, link e template sem polling periódico", ["https://empresa.movidesk.com/*"], ["movidesk.js"]),
     ):
         cabecalho = "\n".join([
             "// ==UserScript==", f"// @name         NOCFlow - {nome} - Local", "// @namespace    nocflow",

@@ -31,6 +31,7 @@ def montar_pendencias(self):
     for coluna, titulo in (("resumo", "Atendimento"), ("estado", "Estado local"), ("acao", "Próxima ação"), ("prazo", "Prazo")):
         self.lista_pendencias.heading(coluna, text=titulo)
         self.lista_pendencias.column(coluna, width=200)
+    self.lista_pendencias.tag_configure("vencida", background="#fef2f2", foreground="#991b1b")
     self.lista_pendencias.pack(fill="both", expand=True)
     self.lista_pendencias.bind("<Double-1>", lambda _: self.executar(self.abrir_pendencia))
 
@@ -45,6 +46,8 @@ def montar_agenda(self):
     for c, titulo in (("titulo", "Rotina"), ("prazo", "Próxima execução"), ("estado", "Estado"), ("responsavel", "Responsável")):
         self.lista_agenda.heading(c, text=titulo)
         self.lista_agenda.column(c, width=190)
+    self.lista_agenda.tag_configure("vencida", background="#fef2f2", foreground="#991b1b")
+    self.lista_agenda.tag_configure("pausada", foreground="#667085")
     self.lista_agenda.pack(fill="both", expand=True, pady=8)
     self.lista_agenda.bind("<<TreeviewSelect>>", lambda _: self.detalhar_rotina())
     self.detalhe_rotina = texto_area(self.agenda, altura=5)

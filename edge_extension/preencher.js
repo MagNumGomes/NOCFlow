@@ -490,7 +490,7 @@ export async function preencherFormulario(dados) {
   } else if (htmlAtual.trim()) {
     limparBorda(evidencia, false);
     limparBorda(conteudoAtual, true);
-    htmlFinal = `${evidencia.innerHTML}${conteudoAtual.innerHTML}`;
+    htmlFinal = `${evidencia.innerHTML}<p data-nocflow-quebra="1" style="margin:0"><br></p>${conteudoAtual.innerHTML}`;
   } else {
     htmlFinal = evidencia.innerHTML;
   }

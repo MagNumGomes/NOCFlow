@@ -176,7 +176,7 @@ class MovideskWorker(threading.Thread):
                         if incidente is None:
                             self.ponte.descartar(anterior)
                             self.pendentes.pop(token, None)
-                    self.ponte.renovar(pedido, 43200)
+                    self.ponte.renovar(pedido, 36000)
                     self.pendentes[pedido.token] = (pedido, None)
                     # Uma reconexão renova o prazo mesmo se o estado anterior já era conectado.
                     self.estado_conexao = "conectando"

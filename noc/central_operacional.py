@@ -50,6 +50,7 @@ class CentralOperacional:
         self.app = app
         self.janela = tk.Toplevel(app.root)
         self.janela.title("NOCFlow · Central operacional")
+        self.janela.configure(background="#f6f7f9")
         self.janela.geometry("1000x760")
         self.janela.minsize(760, 580)
         self.janela.transient(app.root)
@@ -321,7 +322,21 @@ class CentralOperacional:
         if self.lista_agenda.selection():
             rotina = self.rotina()
             registros = [e for e in self.app.fila.operacional.get("execucoes", []) if e["rotina"] == rotina["id"]]
-            mostrar_texto(self.detalhe_rotina, json.dumps({"rotina": rotina, "ultimas_execucoes": registros[-10:]}, ensure_ascii=False, indent=2))
+            linhas = [
+                f"Rotina: {rotina['titulo']} ({'Ativa' if rotina.get('ativa', True) else 'Pausada / concluída'})",
+                f"Recorrência: {rotina['tipo']} · Próxima execução: {rotina['proxima']} · Responsável: {rotina.get('responsavel') or '—'}",
+            ]
+            if rotina.get("url"):
+                linhas.append(f"URL: {rotina['url']}")
+            if rotina.get("esperado"):
+                linhas.append(f"Critério: {rotina['esperado']}")
+            if registros:
+                linhas.append("\nÚltimas execuções:")
+                for reg in registros[-10:]:
+                    linhas.append(f"• [{reg['em']}] {reg['resultado']} ({reg.get('autor') or 'operador'}): {reg['evidencia']}")
+            else:
+                linhas.append("\nNenhuma execução registrada ainda.")
+            mostrar_texto(self.detalhe_rotina, "\n".join(linhas))
 
     def nova_rotina(self):
         def confirmar(d):
@@ -552,12 +567,13 @@ class CentralOperacional:
         for rotina in self.app.fila.operacional.get("rotinas", []):
             estado = "Pausada / concluída" if not rotina.get("ativa", True) else "Vencida" if instante(rotina["proxima"]) <= instante() else "Prevista"
             valores = (rotina["titulo"], rotina["proxima"], estado, rotina["responsavel"])
+            tags = ("pausada",) if estado == "Pausada / concluída" else ("vencida",) if estado == "Vencida" else ()
             if rotina["id"] in existentes:
-                if self.lista_agenda.item(rotina["id"], "values") != valores:
-                    self.lista_agenda.item(rotina["id"], values=valores)
+                if self.lista_agenda.item(rotina["id"], "values") != valores or tuple(self.lista_agenda.item(rotina["id"], "tags")) != tags:
+                    self.lista_agenda.item(rotina["id"], values=valores, tags=tags)
                 existentes.remove(rotina["id"])
             else:
-                self.lista_agenda.insert("", "end", iid=rotina["id"], values=valores)
+                self.lista_agenda.insert("", "end", iid=rotina["id"], values=valores, tags=tags)
         for identificador in existentes:
             self.lista_agenda.delete(identificador)
         ids = set(self.lista_pendencias.get_children())
@@ -566,16 +582,17 @@ class CentralOperacional:
         ativos.sort(key=lambda i: i["meta"].get("acompanhamento", {}).get("proxima", {}).get("prazo", "9999"))
         for n, atendimento in enumerate(ativos):
             proxima = atendimento["meta"].get("acompanhamento", {}).get("proxima", {})
-            vencida = proxima and instante(proxima["prazo"]) <= instante()
+            vencida = bool(proxima and instante(proxima["prazo"]) <= instante())
             valores = (atendimento["dados"].get("alerta", ""), etapa_incidente(atendimento),
                        proxima.get("texto", "Definir próxima ação"), ("VENCIDA · " if vencida else "") + proxima.get("prazo", ""))
+            tags = ("vencida",) if vencida else ()
             identificador = atendimento["id"]
             if identificador in ids:
-                if self.lista_pendencias.item(identificador, "values") != valores:
-                    self.lista_pendencias.item(identificador, values=valores)
+                if self.lista_pendencias.item(identificador, "values") != valores or tuple(self.lista_pendencias.item(identificador, "tags")) != tags:
+                    self.lista_pendencias.item(identificador, values=valores, tags=tags)
                 ids.remove(identificador)
             else:
-                self.lista_pendencias.insert("", "end", iid=identificador, values=valores)
+                self.lista_pendencias.insert("", "end", iid=identificador, values=valores, tags=tags)
             self.lista_pendencias.move(identificador, "", n)
         for identificador in ids:
             self.lista_pendencias.delete(identificador)

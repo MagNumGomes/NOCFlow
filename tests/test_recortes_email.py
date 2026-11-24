@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from PIL import Image
 
 from noc.comunicados import gerar_assunto_email
-from noc.recortes_email import EditorRecortes, caixa_original, montar_recortes
+from noc.ui.recortes_email import EditorRecortes, caixa_original, montar_recortes
 
 
 class RecortesTests(unittest.TestCase):

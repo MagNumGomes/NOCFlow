@@ -31,10 +31,10 @@ def empacotar(raiz: Path = RAIZ, pasta_dist: Path = Path("dist")) -> Path:
     with destino.open("rb") as arquivo:
         checksum = hashlib.file_digest(arquivo, "sha256").hexdigest()
     (saida / "SHA256SUMS.txt").write_text(f"{checksum}  {destino.name}\n", encoding="utf-8", newline="\n")
-    changelog = (raiz / "CHANGELOG.md").read_text(encoding="utf-8")
+    changelog = (raiz / "docs/CHANGELOG.md").read_text(encoding="utf-8")
     marcador = f"## [{versao}]"
     if marcador not in changelog:
-        raise ValueError("Inclua as notas desta versão no CHANGELOG.md.")
+        raise ValueError("Inclua as notas desta versão em docs/CHANGELOG.md.")
     notas = changelog.split(marcador, 1)[1].split("\n## [", 1)[0].strip()
     (saida / "NOTAS.md").write_text(
         f"# NOCFlow {versao}\n\n{notas}\n\n"

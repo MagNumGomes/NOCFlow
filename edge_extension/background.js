@@ -27,7 +27,7 @@ async function abrir(mensagem, sender) {
       !/^[A-Za-z0-9_-]{43}$/.test(mensagem.token)) throw new Error("Solicitação NOCFlow inválida.");
   const dados = await consultar(mensagem.token);
   if (dados.tipo === "conectar") {
-    await chrome.storage.session.set({conexaoNocFlow: {token: mensagem.token, expira: Date.now() + 43200000}});
+    await chrome.storage.session.set({conexaoNocFlow: {token: mensagem.token, expira: Date.now() + 36000000}});
     await informar(mensagem.token, "ok");
     await chrome.alarms.create("nocflow-conexao", {periodInMinutes: 1});
     return {mensagem: "NOCFlow conectado. Use Enviar ao NOCFlow nas páginas do Zabbix. Você pode fechar esta guia."};
@@ -51,7 +51,7 @@ async function abrir(mensagem, sender) {
     }
   }
   const destino = new URL(dados.url);
-  if (!["http:", "https:"].includes(destino.protocol)) throw new Error("Endereço do Movidesk inválido.");
+  if (destino.protocol !== "https:") throw new Error("Endereço HTTPS do Movidesk obrigatório.");
   await chrome.storage.session.set({[chave(sender.tab.id)]: {
     token: mensagem.token, url: destino.href, fase: "preencher", expira: Date.now() + (dados.timeout_login || 120) * 1000,
     retorno: dados.timeout_retorno || 28800
@@ -123,7 +123,7 @@ async function preencher(sender) {
     const campos = respostas[0].result.campos || {};
     await informar(pedido.token, "ok", "", {campos});
     await chrome.storage.session.set({[chave(id)]: {...pedido, fase: "salvar", expira: Date.now() + pedido.retorno * 1000}});
-    const nomes = {assunto: "título", descricao: "descrição", tipo: "tipo/ação interna", categoria: "categoria", urgencia: "urgência", tempo_apontado: "tempo apontado (00:03)", atividade: "atividade (Observability)", solicitante: "solicitante (tag Movidesk)", servico: "serviço (tag Dataside)"};
+    const nomes = {assunto: "título", descricao: "descrição", tipo: "tipo/ação interna", categoria: "categoria", urgencia: "urgência", tempo_apontado: "tempo apontado (00:03)", atividade: "atividade (Observability)", solicitante: "solicitante (tag Movidesk)", servico: "serviço (pela tag)"};
     const pendentes = Object.entries(campos).filter(([, estado]) => estado !== "preenchido").map(([campo]) => nomes[campo]);
     const detalhe = pendentes.length ? ` Confira os campos pendentes: ${pendentes.join(", ")}.` : " Campos confirmados.";
     return {aguardando_ticket: true, mensagem: `NOCFlow: título e descrição preenchidos.${detalhe} Revise e salve; o número será devolvido ao aplicativo.`};

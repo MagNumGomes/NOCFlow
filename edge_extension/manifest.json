@@ -15,7 +15,7 @@
   },
   "host_permissions": [
     "http://127.0.0.1/*",
-    "https://*.movidesk.com/*",
+    "https://empresa.movidesk.com/*",
     "https://zabbix.example.com/*",
     "https://zabbix-secondary.example.com/*"
   ],
@@ -35,7 +35,7 @@
     },
     {
       "matches": [
-        "https://*.movidesk.com/*"
+        "https://empresa.movidesk.com/*"
       ],
       "js": [
         "ticket.js",

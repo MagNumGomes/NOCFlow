@@ -10,7 +10,7 @@ from PIL import Image
 from noc.configuracao import Config
 from noc.extracao_local import interpretar_ocr, texto_relevante
 from noc.incidentes import FilaIncidentes, importar_eventos
-from noc.ocr_windows import organizar_palavras
+from noc.infra.ocr_windows import organizar_palavras
 from noc.rascunhos import RascunhoWorker
 
 

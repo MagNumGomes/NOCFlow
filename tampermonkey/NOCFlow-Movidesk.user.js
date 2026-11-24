@@ -3,7 +3,7 @@
 // @namespace    nocflow
 // @version      2.3.0
 // @description  Copia número, assunto, link e template sem polling periódico
-// @match        https://*.movidesk.com/*
+// @match        https://empresa.movidesk.com/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==

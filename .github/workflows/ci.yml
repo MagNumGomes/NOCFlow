@@ -35,7 +35,7 @@ jobs:
       - name: Instalar snapshot Windows
         run: |
           python -m venv .venv-build
-          .\.venv-build\Scripts\python.exe -m pip install -r scripts/requirements-windows.txt -r requirements-dev.txt -r scripts/requirements-build.txt
+          .\.venv-build\Scripts\python.exe -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r scripts/requirements-windows.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\.venv-build\Scripts\python.exe -m pip check
       - name: Conferir versao e fontes geradas
@@ -50,6 +50,8 @@ jobs:
           }
       - name: Ruff
         run: .\.venv-build\Scripts\python.exe -m ruff check . --no-cache
+      - name: Verificar segredos nas fontes
+        run: .\.venv-build\Scripts\python.exe scripts/verificar_segredos.py
       - name: Instalar Chromium
         run: .\.venv-build\Scripts\python.exe -m playwright install chromium --no-shell
       - name: Preparar OCR ingles do Windows
@@ -67,8 +69,30 @@ jobs:
         run: .\.venv-build\Scripts\python.exe -m unittest discover -s tests -v
       - name: Smoke por fonte
         run: .\.venv-build\Scripts\python.exe scripts/verificar_build.py
+      - name: Provisionar certificado da release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          SIGN_PFX: ${{ secrets.NOCFLOW_SIGN_PFX_BASE64 }}
+          SIGN_PASSWORD: ${{ secrets.NOCFLOW_SIGN_PFX_PASSWORD }}
+        run: |
+          if (-not $env:SIGN_PFX) { throw 'Configure o certificado de code signing para publicar releases.' }
+          $pfx = Join-Path $env:RUNNER_TEMP 'nocflow-sign.pfx'
+          try {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGN_PFX))
+            $senha = ConvertTo-SecureString $env:SIGN_PASSWORD -AsPlainText -Force
+            $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $senha
+            "NOCFLOW_SIGN_CERT_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+          } finally {
+            Remove-Item $pfx -Force -ErrorAction SilentlyContinue
+          }
       - name: Build e smoke empacotado
         run: .\build.ps1 -SomentePacote
+      - name: Remover certificado temporario
+        if: always() && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          if ($env:NOCFLOW_SIGN_CERT_THUMBPRINT) {
+            Remove-Item "Cert:\CurrentUser\My\$env:NOCFLOW_SIGN_CERT_THUMBPRINT" -DeleteKey -Force
+          }
       - name: Preparar ZIP e checksum
         if: startsWith(github.ref, 'refs/tags/v')
         run: .\.venv-build\Scripts\python.exe scripts/empacotar_release.py

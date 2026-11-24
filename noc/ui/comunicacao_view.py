@@ -10,14 +10,25 @@ from .destinatarios_view import DestinatariosView
 def montar_comunicacao(self):
     escolhas = ttk.Frame(self.pagina_comunicar)
     escolhas.pack(fill="x", pady=(0, 6))
-    escolhas.columnconfigure((1, 3), weight=1)
+    escolhas.columnconfigure(3, weight=1)
     ttk.Label(escolhas, text="Canal", style="Discreto.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 6))
-    ttk.Label(escolhas, text="Modelo", style="Discreto.TLabel").grid(row=0, column=2, sticky="w", padx=(12, 6))
+    barra_canais = ttk.Frame(escolhas)
+    barra_canais.grid(row=0, column=1, sticky="w")
+    self.botoes_canal = {}
+    for indice, canal in enumerate(("WhatsApp", "Teams", "E-mail")):
+        botao = ttk.Button(
+            barra_canais,
+            text=canal,
+            style="Canal.TButton",
+            command=lambda c=canal: self.selecionar_canal_rapido(c),
+        )
+        botao.pack(side="left", padx=(0, 4 if indice < 2 else 0))
+        self.botoes_canal[canal] = botao
     self.seletor_canal = ttk.Combobox(escolhas, textvariable=self.canal,
                                       values=("WhatsApp", "Teams", "E-mail"), state="readonly", width=14)
-    self.seletor_canal.grid(row=0, column=1, sticky="ew")
     self.seletor_canal.bind("<<ComboboxSelected>>", self.mudar_canal)
-    self.seletor_modelo = ttk.Combobox(escolhas, textvariable=self.modelo_comunicado, values=MODELOS, state="readonly", width=14)
+    ttk.Label(escolhas, text="Modelo", style="Discreto.TLabel").grid(row=0, column=2, sticky="w", padx=(12, 6))
+    self.seletor_modelo = ttk.Combobox(escolhas, textvariable=self.modelo_comunicado, values=MODELOS, state="readonly", width=18)
     self.seletor_modelo.grid(row=0, column=3, sticky="ew")
     self.seletor_modelo.bind("<<ComboboxSelected>>", self.mudar_modelo)
     self.opcoes_canal = ttk.Frame(self.pagina_comunicar)
@@ -50,11 +61,12 @@ def montar_comunicacao(self):
     self.destinatarios = DestinatariosView(email, self)
     self.destinatarios.pack(fill="x", pady=(0, 6))
     email_linha = ttk.Frame(email)
-    email_linha.pack(fill="x", pady=(0, 8))
+    email_linha.pack(fill="x", pady=(0, 6))
+    ttk.Label(email_linha, text="Assunto", style="Discreto.TLabel").pack(side="left", padx=(0, 6))
     ttk.Entry(email_linha, textvariable=self.assunto_email, state="readonly").pack(
         side="left", fill="x", expand=True)
-    self.btn_assunto = ttk.Button(email_linha, text="Assunto", style="Compacto.TButton", command=self.copiar_assunto_email)
-    self.btn_assunto.pack(side="right", padx=(8, 0))
+    self.btn_assunto = ttk.Button(email_linha, text="Copiar assunto", style="Compacto.TButton", command=self.copiar_assunto_email)
+    self.btn_assunto.pack(side="right", padx=(6, 0))
     self.atualizacao_area = ttk.Frame(self.pagina_comunicar)
     relato = ttk.Frame(self.atualizacao_area)
     relato.pack(fill="x", pady=(0, 4))
@@ -67,10 +79,28 @@ def montar_comunicacao(self):
     self.entrada_acionamento_email.pack(side="left", fill="x", expand=True, padx=(6, 0))
     fim_comunicacao = ttk.Frame(self.pagina_comunicar)
     fim_comunicacao.pack(side="bottom", fill="x", pady=(4, 0))
-    ttk.Button(fim_comunicacao, text="Ampliar prévia", style="Compacto.TButton", command=self.ampliar_previa).pack(side="right", padx=(8, 0))
+    ttk.Button(fim_comunicacao, text="Ampliar prévia", style="Compacto.TButton", command=self.ampliar_previa).pack(side="right", padx=(6, 0))
+    self.controles_evidencia_email = ttk.Frame(fim_comunicacao)
+    ttk.Label(self.controles_evidencia_email, text="Anexo:", style="Discreto.TLabel").pack(side="left", padx=(0, 4))
+    self.seletor_evidencia_comunicar = ttk.Combobox(
+        self.controles_evidencia_email,
+        textvariable=self.evidencia_escolha,
+        values=("Print completo", "Recorte"),
+        state="readonly",
+        width=14,
+    )
+    self.seletor_evidencia_comunicar.pack(side="left")
+    self.seletor_evidencia_comunicar.bind("<<ComboboxSelected>>", self.escolher_evidencia)
+    self.btn_recortar_comunicar = ttk.Button(
+        self.controles_evidencia_email,
+        text="Recortar",
+        style="Compacto.TButton",
+        command=self.recortar_imagem_email,
+    )
+    self.btn_recortar_comunicar.pack(side="left", padx=(4, 0))
     copia_label = ttk.Label(fim_comunicacao, textvariable=self.copias_resumo, style="Discreto.TLabel", wraplength=390)
     copia_label.pack(side="left", fill="x", expand=True)
-    fim_comunicacao.bind("<Configure>", lambda e: copia_label.configure(wraplength=max(150, e.width - 130)))
+    fim_comunicacao.bind("<Configure>", lambda e: copia_label.configure(wraplength=max(150, e.width - 310)))
     self.area_previa = ttk.Frame(self.pagina_comunicar)
     self.area_previa.pack(fill="both", expand=True)
     self.previa = tk.Text(self.area_previa, height=5, width=1, wrap="word",
