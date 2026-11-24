@@ -89,7 +89,7 @@ def gerar_template(d, canal, url, nome_operador="", modelo="Abertura normal", at
 
 Gostaria de informar sobre alertas detectados no sistema Zabbix. Abaixo estão os detalhes da falha:
 
-N° do Ticket criado: {d['ticket']}
+Nº do Ticket criado: {d['ticket']}
 Alerta: {d['alerta']}
 Severidade: {d['severidade']}
 Servidor: {d['servidor']}
@@ -106,7 +106,9 @@ def codificar_imagem_png(imagem):
 
 
 def gerar_html_email(texto, imagem=None):
-    corpo = f'<div style="white-space:pre-wrap;font-family:Segoe UI,sans-serif;font-size:11pt">{escape(texto)}</div>'
+    linhas = escape(texto.replace("\r\n", "\n").replace("\r", "\n")).split("\n")
+    conteudo = "<br>\n".join(linhas)
+    corpo = f'<div style="white-space:pre-wrap;font-family:Segoe UI,sans-serif;font-size:11pt">{conteudo}</div>'
     b64 = codificar_imagem_png(imagem)
     if not b64:
         return corpo

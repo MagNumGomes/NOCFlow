@@ -14,26 +14,26 @@ from noc.tokens_ia import ConsumoIA
 
 class TokensTests(unittest.TestCase):
     def test_gemini_envia_teto_e_informa_consumo_mesmo_quando_truncado(self):
-        from google.generativeai import protos
-        from google.generativeai.types import GenerateContentResponse
+        from google.genai import types
 
-        for motivo in (1, 2):
+        for motivo in ("STOP", "MAX_TOKENS"):
             with self.subTest(motivo=motivo):
                 # Usa o objeto real do SDK, inclusive o enum MAX_TOKENS.
-                resposta = GenerateContentResponse.from_response(protos.GenerateContentResponse({
+                resposta = types.GenerateContentResponse(**{
                     "candidates": [{"content": {"parts": [{"text": "{}"}]}, "finish_reason": motivo}],
                     "usage_metadata": {"prompt_token_count": 100, "candidates_token_count": 30, "total_token_count": 150},
-                }))
+                })
                 eventos = []
-                with patch("google.generativeai.configure"), patch("google.generativeai.GenerativeModel") as modelo:
-                    modelo.return_value.generate_content.return_value = resposta
-                    config = Config(Path("."), gemini_max_output_tokens=1024)
-                    if motivo == 2:
+                with patch("noc.infra.ocr_windows.extrair_texto", return_value="Host: teste"), patch("google.genai.Client") as modelo:
+                    cliente = modelo.return_value.__enter__.return_value
+                    cliente.models.generate_content.return_value = resposta
+                    config = Config(Path("."), gemini_max_output_tokens=1024, ia_externa=True, confirmar_ia=lambda *_: True)
+                    if motivo == "MAX_TOKENS":
                         with self.assertRaisesRegex(ValueError, "GEMINI_MAX_OUTPUT_TOKENS"):
                             consultar_gemini(config, Image.new("RGB", (10, 10)), lambda t, d, _ev=eventos: _ev.append(d))
                     else:
                         self.assertEqual(consultar_gemini(config, Image.new("RGB", (10, 10)), lambda t, d, _ev=eventos: _ev.append(d)), "{}")
-                    enviado = modelo.return_value.generate_content.call_args.kwargs["generation_config"]
+                    enviado = cliente.models.generate_content.call_args.kwargs["config"]
                     self.assertEqual(enviado["max_output_tokens"], 1024)
                 self.assertEqual(eventos[0]["total"], 150)
                 self.assertEqual(eventos[0]["saida"], 30)

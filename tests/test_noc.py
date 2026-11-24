@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from noc.comunicados import gerar_html, gerar_html_email, validar_dados
+from noc.comunicados import gerar_html, gerar_html_email, gerar_template, validar_dados
 from noc.configuracao import Config, carregar_config, diretorio_aplicacao
 from noc.incidentes import CAMPOS_FORMULARIO as CAMPOS
 from noc.interface import NOCFlow
@@ -68,6 +68,36 @@ class DadosTests(unittest.TestCase):
         self.assertLess(com_imagem.index("href="), com_imagem.index("<img "))
         self.assertEqual(gerar_html(dados_incidente(link_zabbix="")), "")
 
+    def test_template_e_html_email_preservam_quebras_de_linha_e_caracteres_especiais(self):
+        dados = dados_incidente(
+            ticket="928451",
+            alerta="CPU > 90% & Latência < 5ms: falha crítica",
+            severidade="Alta",
+            servidor="srv-zabbix-01",
+            situacao="CPU: 95% (> 90%) / Livre < 5%",
+            horario="24/11/2026 15:04:59",
+        )
+        texto = gerar_template(dados, "E-mail", "https://empresa.movidesk.com")
+        esperado = (
+            "Prezados,\n"
+            "\n"
+            "Gostaria de informar sobre alertas detectados no sistema Zabbix. Abaixo estão os detalhes da falha:\n"
+            "\n"
+            "Nº do Ticket criado: 928451\n"
+            "Alerta: CPU > 90% & Latência < 5ms: falha crítica\n"
+            "Severidade: Alta\n"
+            "Servidor: srv-zabbix-01\n"
+            "Dados operacionais: CPU: 95% (> 90%) / Livre < 5%\n"
+            "Horário da Falha: 24/11/2026 15:04:59"
+        )
+        self.assertEqual(texto, esperado)
+        html = gerar_html_email(texto)
+        self.assertIn("<br>\n<br>\nGostaria de informar", html)
+        self.assertIn("detalhes da falha:<br>\n<br>\nNº do Ticket criado: 928451<br>\n", html)
+        self.assertIn("Alerta: CPU &gt; 90% &amp; Latência &lt; 5ms: falha crítica<br>\n", html)
+        self.assertIn("Dados operacionais: CPU: 95% (&gt; 90%) / Livre &lt; 5%<br>\n", html)
+        self.assertEqual(html.count("<br>"), len(esperado.splitlines()) - 1)
+
 
 class RascunhoTests(unittest.TestCase):
     def test_ultimo_snapshot_recupera_campos_e_imagem(self):
@@ -117,8 +147,9 @@ class RascunhoTests(unittest.TestCase):
             worker.join(timeout=5)
             backups = list(config.dados_dir.glob("rascunho-invalido-*.json"))
             self.assertEqual(len(backups), 1)
-            self.assertEqual(backups[0].read_text(encoding="utf-8"), "JSON interrompido")
-            self.assertEqual(json.loads(arquivo.read_text(encoding="utf-8"))["dados"]["ticket"], "123")
+            from noc.infra.protecao import desproteger
+            self.assertEqual(desproteger(backups[0].read_bytes()).decode(), "JSON interrompido")
+            self.assertEqual(json.loads(desproteger(arquivo.read_bytes()))["dados"]["ticket"], "123")
 
 
 class InterfaceTests(unittest.TestCase):
@@ -197,7 +228,7 @@ class InterfaceTests(unittest.TestCase):
         self.app.definir_imagem(anterior)
         primeiro = self.app.fila.ativo
         with patch("noc.interface.ImageGrab.grabclipboard", return_value=nova) as clipboard, \
-                patch("noc.ocr_windows.extrair_texto", return_value="Host: host-02\nTrigger: Disco cheio"):
+                patch("noc.infra.ocr_windows.extrair_texto", return_value="Host: host-02\nTrigger: Disco cheio"):
             self.app.ler_print()
             self.aguardar(lambda: self.app.operacao is None)
         clipboard.assert_called_once()
@@ -213,19 +244,18 @@ class InterfaceTests(unittest.TestCase):
         imagem = Image.new("RGB", (10, 10), "red")
         self.app.definir_imagem(imagem)
         with patch("noc.interface.ImageGrab.grabclipboard") as clipboard, \
-                patch("noc.ocr_windows.extrair_texto", return_value="Host: host-01"):
+                patch("noc.infra.ocr_windows.extrair_texto", return_value="Host: host-01"):
             self.app.extrair_com_ia(False)
             self.aguardar(lambda: self.app.operacao is None)
         clipboard.assert_not_called()
         self.assertIs(self.app.imagem, imagem)
 
     def test_interface_mostra_groq_apos_ocr_incompleto(self):
-        from google.api_core.exceptions import ServiceUnavailable
 
         self.app.config = replace(self.app.config, groq_api_key="groq-teste")
         self.app.definir_imagem(Image.new("RGB", (10, 10)))
         resposta = json.dumps({"alerta": "CPU alta", "servidor": "host-01", "severidade": "Alta", "situacao": "95%", "horario": "10:42"})
-        with patch("noc.extracao.consultar_gemini", side_effect=ServiceUnavailable("alta demanda")), patch("noc.ocr_windows.extrair_texto", return_value="CPU alta host-01"), patch("noc.extracao.consultar_groq", return_value=resposta):
+        with patch("noc.extracao.consultar_gemini", side_effect=RuntimeError("alta demanda")), patch("noc.infra.ocr_windows.extrair_texto", return_value="CPU alta host-01"), patch("noc.extracao.consultar_groq", return_value=resposta):
             self.app.extrair_com_ia()
             self.aguardar(lambda: self.app.operacao is None)
         self.assertIn("Groq", self.app.status.get())
@@ -244,6 +274,21 @@ class InterfaceTests(unittest.TestCase):
         self.app.desfazer_novo()
         self.assertEqual(self.app.obter_dados(), dados)
         self.assertIs(self.app.imagem, imagem)
+
+    def test_previa_ia_mostra_conteudo_e_cancelamento_nao_autoriza_envio(self):
+        import tkinter as tk
+        from tkinter import ttk
+
+        for aceitar in (False, True):
+            resposta = queue.Queue()
+            self.app.mostrar_previa_ia(("Groq", '{"texto": "[REMOVIDO]"}', resposta))
+            janela = next(w for w in self.root.winfo_children() if isinstance(w, tk.Toplevel))
+            texto = next(w for w in janela.winfo_children() if isinstance(w, tk.Text))
+            self.assertIn('[REMOVIDO]', texto.get("1.0", "end"))
+            self.assertEqual(str(texto.cget("state")), "disabled")
+            rotulo = "Confirmar conteúdo e enviar" if aceitar else "Cancelar"
+            next(w for w in janela.winfo_children() if isinstance(w, ttk.Button) and w.cget("text") == rotulo).invoke()
+            self.assertEqual(resposta.get_nowait(), aceitar)
 
     def test_retorno_ticket_atualiza_incidente_original_apos_trocar_fila(self):
         from noc.incidentes import importar_eventos
@@ -277,7 +322,7 @@ class InterfaceTests(unittest.TestCase):
     def test_ocr_local_sem_chaves_funciona_pela_interface(self):
         self.app.config = replace(self.app.config, api_key="", groq_api_key="")
         self.app.definir_imagem(Image.new("RGB", (10, 10)))
-        with patch("noc.ocr_windows.extrair_texto", return_value="Host: local-01\nTrigger: CPU alta"), patch("noc.extracao.consultar_gemini") as gemini, patch("noc.extracao.consultar_groq") as groq:
+        with patch("noc.infra.ocr_windows.extrair_texto", return_value="Host: local-01\nTrigger: CPU alta"), patch("noc.extracao.consultar_gemini") as gemini, patch("noc.extracao.consultar_groq") as groq:
             self.app.extrair_com_ia(False)
             self.aguardar(lambda: self.app.operacao is None)
             self.assertEqual(self.app.obter_dados()["servidor"], "local-01")
@@ -369,8 +414,9 @@ class InterfaceTests(unittest.TestCase):
         imagem = Image.new("RGB", (60, 40), "green")
         self.app.definir_dados(dados_incidente())
         self.app.definir_imagem(imagem)
-        self.app.canal.set("E-mail")
-        self.app.mudar_canal()
+        self.app.selecionar_canal_rapido("E-mail")
+        self.assertEqual(self.app.canal.get(), "E-mail")
+        self.assertEqual(self.app.botoes_canal["E-mail"].cget("style"), "CanalAtivo.TButton")
         self.aguardar(lambda: not self.app.tarefas.callbacks)
         self.assertIsNotNone(self.app.miniatura_previa)
         self.assertEqual(len(self.app.previa.image_names()), 1)
@@ -380,10 +426,23 @@ class InterfaceTests(unittest.TestCase):
             copiar_rico.assert_called_once()
             copiar_texto.assert_not_called()
             texto, html, _ = copiar_rico.call_args.args
-            self.assertIn("N° do Ticket criado: 123", texto)
+            self.assertIn("Nº do Ticket criado: 123", texto)
             self.assertIn("data:image/png;base64,", html)
-            self.assertLess(html.index("N° do Ticket criado: 123"), html.index("<img "))
+            self.assertIn("<br>\nNº do Ticket criado: 123<br>\n", html)
+            self.assertLess(html.index("Nº do Ticket criado: 123"), html.index("<img "))
         self.assertIn("E-mail + print copiados.", self.app.status.get())
+        self.assertEqual(self.app.botoes_canal["E-mail"].cget("text"), "E-mail ✓")
+        self.app.definir_imagem(None)
+        with patch("noc.interface.copiar_html_texto") as copiar_rico, patch("noc.interface.pyperclip.copy") as copiar_texto:
+            self.app.copiar_comunicado("E-mail")
+            self.aguardar(lambda: not self.app.tarefas.callbacks)
+            copiar_rico.assert_called_once()
+            copiar_texto.assert_not_called()
+            texto_sem_img, html_copiado, _ = copiar_rico.call_args.args
+            self.assertIn("Nº do Ticket criado: 123", texto_sem_img)
+            self.assertIn("<br>\nNº do Ticket criado: 123<br>\n", html_copiado)
+            self.assertNotIn("<img", html_copiado)
+        self.assertIn("E-mail copiado.", self.app.status.get())
         html_sem_img = gerar_html_email("Texto puro", None)
         self.assertNotIn("<img", html_sem_img)
 
@@ -590,7 +649,8 @@ class InterfaceTests(unittest.TestCase):
             liberar.set()
             for thread in threads:
                 thread.join(timeout=3)
-        salvo = json.loads((Path(self.pasta.name) / ".noc_data/rascunho.json").read_text(encoding="utf-8"))
+        from noc.infra.protecao import desproteger
+        salvo = json.loads(desproteger((Path(self.pasta.name) / ".noc_data/rascunho.json").read_bytes()))
         self.assertEqual(salvo["dados"]["alerta"], "CPU alta")
 
     def test_falha_ao_salvar_no_fechamento_permite_manter_janela_e_dados(self):

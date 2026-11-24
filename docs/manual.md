@@ -1,346 +1,132 @@
 # Manual de Uso — NOCFlow
 
-Este manual acompanha o operador desde a instalação até a comunicação de incidentes, o uso da **Central Operacional**, a geração de relatórios e a passagem de turno. A extensão e os painéis do navegador utilizam o nome **NOCFlow — Zabbix e Movidesk**.
+Este manual apresenta de forma direta como instalar, configurar e operar o **NOCFlow** no dia a dia do plantão.
 
-Consulte a versão no título do aplicativo e o [histórico de versões](../CHANGELOG.md). Aplicativo, extensão e userscripts compartilham a versão definida em `VERSION`.
-
-Consulte também a [Apresentação do Projeto](../README.md) e a [Arquitetura Técnica](arquitetura.md).
-
-## Destinatários de e-mail por empresa
-
-Em **Comunicar → E-mail**, clique em **Cadastrar**, informe a empresa e os endereços dos campos **Para** e **Cc (com cópia)**. Separe vários e-mails por ponto e vírgula, vírgula ou quebra de linha. Endereços repetidos são removidos dentro de cada lista.
-
-Selecione a empresa no dropdown e use **Copiar Para** para colar no campo Para do e-mail; depois use **Copiar Cc** para colar no campo Cc. Cada botão copia somente sua lista, separada por ponto e vírgula. Campos sem destinatários têm o botão desabilitado.
-
-**Editar** permite alterar o cadastro ou excluí-lo. As empresas são compartilhadas entre os incidentes e persistem localmente em `.noc_data/destinatarios.json` (no executável, dentro de `%LOCALAPPDATA%\NOCFlow`). O cadastro não envia mensagens nem altera a assinatura ou o corpo do e-mail.
-
-## Sumário
-
-- [Destinatários de e-mail por empresa](#destinatários-de-e-mail-por-empresa)
-
-- [Requisitos](#requisitos)
-- [Instalação e atualização](#instalação-e-atualização)
-- [Conhecer a interface](#conhecer-a-interface)
-- [Atendimento de ponta a ponta](#atendimento-de-ponta-a-ponta)
-- [Importar alertas do Zabbix](#importar-alertas-do-zabbix)
-- [Organizar a fila](#organizar-a-fila)
-- [Capturar imagens e usar OCR](#capturar-imagens-e-usar-ocr)
-- [Preencher o Movidesk](#preencher-o-movidesk)
-- [Preparar comunicados e recortes](#preparar-comunicados-e-recortes)
-- [Central Operacional (Regras, Agenda, Conhecimento e Relatórios)](#central-operacional-regras-agenda-conhecimento-e-relatórios)
-- [Utilitários do navegador e WhatsApp Web](#utilitários-do-navegador-e-whatsapp-web)
-- [Configurar o aplicativo e a IA](#configurar-o-aplicativo-e-a-ia)
-- [Acompanhar consumo e desempenho](#acompanhar-consumo-e-desempenho)
-- [Dados, backup e encerramento](#dados-backup-e-encerramento)
-- [Solução de problemas](#solução-de-problemas)
+- **Apresentação do projeto:** [README](../README.md)
+- **Documentação técnica:** [Arquitetura](arquitetura.md)
+- **Releases e CI:** [Dependências e Releases](releases.md)
 
 ---
 
-## Requisitos
+## 1. Requisitos e Instalação
 
-- Windows 10 ou 11.
-- Microsoft Edge, com acesso e login nas instâncias utilizadas de Zabbix e Movidesk.
-- Português ou Inglês instalado no Windows para a leitura de imagens por OCR nativo.
-- Python 3.12 x64 recomendado e homologado para executar pelo código-fonte ou gerar um executável; as dependências exigem no mínimo Python 3.11.
+### Requisitos
+- **Windows 10 ou 11** (com idioma Português ou Inglês instalado para o OCR nativo).
+- **Microsoft Edge** logado no Zabbix, Movidesk e WhatsApp Web.
+- *Opcional (apenas para rodar por código-fonte ou compilar):* **Python 3.12 x64**.
 
-O fluxo principal funciona **100% localmente e sem chaves de IA**. O acesso aos sites depende da rede da organização; o processamento de capturas, fila, regras operacionais, relatórios e templates é local. A complementação por IA é opcional e exige conexão apenas com o provedor configurado (Groq e/ou Gemini).
-
----
-
-## Instalação e atualização
-
-### Usar o executável Windows
-
-1. Copie a pasta `NOCFlow` completa para o computador.
-2. Mantenha `NOCFlow.exe` e a subpasta `_internal` sempre juntos no mesmo diretório.
-3. Abra `NOCFlow.exe` ou o atalho **NOCFlow**, se houver.
-4. Aguarde a recuperação do rascunho e a mensagem de prontidão no rodapé.
-
-O computador que recebe o pacote pronto não precisa de Python nem de editor de código. O pacote inclui a pasta `docs/` (com este manual e a documentação de arquitetura), orientações rápidas (`LEIA-ME-executavel.txt`) e os scripts na pasta `tampermonkey/`.
-
-### Executar pelo código-fonte
-
-No PowerShell, na raiz do repositório:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe app_noc.py
-```
-
-O aplicativo prepara o `.env` automaticamente a partir do exemplo e acrescenta opções ausentes a configurações existentes sem apagar suas chaves. Alterações no `.env` entram em vigor após reiniciar o aplicativo.
-
-### Instalar a extensão do Edge
-
-1. No aplicativo, abra o menu **⋯ > Instalar extensão do Edge**.
-2. Clique em **Copiar caminho** e depois em **Abrir extensões** (ou acesse `edge://extensions/` no Microsoft Edge).
-3. Ative a chave **Modo do desenvolvedor**.
-4. Clique em **Carregar sem compactação**.
-5. Selecione a pasta cujo caminho foi copiado no passo 2.
-6. Confira o cartão **NOCFlow — Zabbix e Movidesk** e mantenha a extensão habilitada. A versão deve corresponder à exibida no título do aplicativo.
-7. Recarregue as páginas abertas do Zabbix e do Movidesk com **F5**.
-
-Instale a extensão no mesmo perfil do Edge em que você já utiliza o Zabbix, o Movidesk e o WhatsApp Web. No executável, a pasta preparada fica em `%LOCALAPPDATA%\NOCFlow\edge_extension`; pelo código-fonte, em `.noc_data/edge_extension` (ou `edge_extension/` na raiz). As origens customizadas do Zabbix são preservadas em `.noc_data/extensao.json` durante atualizações.
-
-### Atualizar uma instalação
-
-1. Feche o NOCFlow normalmente, aguardando a confirmação **✓ Salvo**.
-2. Substitua a pasta distribuída pela nova versão completa.
-3. Abra o aplicativo para atualizar automaticamente os arquivos locais da extensão (preservando seus domínios Zabbix configurados).
-4. Em `edge://extensions/`, clique em **Recarregar** no cartão da extensão.
-5. Atualize as páginas dos sistemas com **F5** e clique em **Conectar / Reconectar** na faixa Zabbix do aplicativo.
+### Instalação do Aplicativo e da Extensão
+1. **Aplicativo:** mantenha `NOCFlow.exe` dentro da pasta `NOCFlow` (ao lado de `_internal`) e abra o executável.
+2. **Domínios HTTPS:**
+   - Abra **`⋯` > `Configurações`** (`.env`) e defina `MOVIDESK_URL=https://suaempresa.movidesk.com`.
+   - Edite `%LOCALAPPDATA%\NOCFlow\.noc_data\extensao.json` (ou `.noc_data\extensao.json` no código-fonte) com as URLs HTTPS do seu Zabbix em `"zabbix_origens"`, salve e reinicie o aplicativo.
+3. **Extensão do Edge:**
+   - Clique em **`⋯` > `Instalar extensão do Edge`**, copie o caminho e abra `edge://extensions/`.
+   - Ative o **Modo do desenvolvedor**, clique em **Carregar sem compactação** e selecione a pasta copiada.
+   - Atualize as abas abertas do Zabbix e do Movidesk com **F5**.
 
 ---
 
-## Conhecer a interface
+## 2. Visão Geral da Interface e Atalhos
 
-| Área | Uso |
+| Elemento | Função |
 |---|---|
-| Seletor no topo | Alternar rapidamente entre os incidentes da fila. |
-| **Fila / Voltar** | Abrir ou recolher a lista completa com busca textual, filtros por severidade/ticket/etapa e contadores. |
-| **+ Novo** | Criar um novo atendimento vazio preservando os anteriores. |
-| Faixa **Zabbix** | Acompanhar o estado da conexão, o horário de expiração, o botão **Conectar / Reconectar** e o botão **Central operacional** (que destaca quantas rotinas/ações estão vencidas). |
-| Menu **⋯** | Ações de conexão, captura/OCR, IA, instalação da extensão, configurações, consumo de tokens e gestão da fila. |
-| Aba **Incidente** | Importar dados do Zabbix, ler print com OCR e revisar alerta, servidor, severidade, dados operacionais, horário e link. |
-| Campo **Ticket** | Receber automaticamente ou digitar o número do chamado (na barra inferior). |
-| Botão de ação do ticket | Adapta-se ao contexto: **Criar ticket**, **Voltar ao formulário**, **Abrir ticket #…** ou **Informar ticket**. |
-| Aba **Comunicar** | Escolher canal (`WhatsApp`, `Teams`, `E-mail`) e modelo de comunicado, informar equipe/time ou atualização, revisar/ampliar a prévia e copiar mensagem ou assunto. |
-| Aba **Evidências** | Adicionar, ampliar com zoom, recortar (`Host`, `Trigger`, `Severity`) e copiar a imagem; escolher entre **Print completo** ou **Recorte** para envio ao ticket. |
-| **Pendências / Atendimento** | Consultar próxima ação recomendada, avisos de coleta, status de preenchimento de cada campo do Movidesk e resolver divergências entre edições manuais e recapturas. |
-| **Próximo** | Avançar automaticamente para o próximo incidente que aguarda abertura de ticket ou primeira comunicação. |
-| Rodapé | Acompanhar o progresso da operação ativa, tempo decorrido e confirmação de salvamento (`✓ Salvo`). Em caso de falha, o botão **Detalhes** exibe o diagnóstico completo. |
+| **Seletor no topo** | Alterna rapidamente entre os incidentes ativos da fila. |
+| **Fila (N) / Voltar** | Abre a tabela da fila com busca, botão **Limpar filtros**, filtros por severidade/ticket/etapa e cores por criticidade (*Desastre*, *Alta*, *Média*, *Arquivado*). |
+| **+ Novo** (`Ctrl+N`) | Cria um atendimento em branco sem perder os anteriores. |
+| **Faixa Zabbix** | Exibe o status visual (`● conectado` em verde por **10 horas**, `▲ expirado/sem resposta` em âmbar, `○ desconectado`), botão **Conectar / Reconectar** e **Central operacional**. |
+| **Aba Incidente** | Permite **Importar dados** (`Ctrl+I`), **Ler print** (`Ctrl+Shift+V`), revisar campos do alerta e abrir o evento no navegador pelo botão **`Abrir ↗`** ao lado do Link Zabbix. |
+| **Aba Comunicar** | Botões rápidos de canal (**WhatsApp** `Alt+1`, **Teams** `Alt+2`, **E-mail** `Alt+3`) com indicador `✓` quando já copiado, seleção de modelo, destinatários por empresa e prévia com imagem. |
+| **Aba Evidências** | Barra única para **Adicionar print**, **Ampliar**, **Recortar print**, **Copiar print** e **Copiar recorte**, além da escolha entre **Print completo** ou **Recorte**. |
+| **Barra Inferior** | Campo **Ticket**, botão contextual (**Criar ticket**, **Voltar ao formulário**, **Abrir ticket #…**), **Copiar mensagem / Copiar e-mail** e **Próximo**. |
 
-### Atalhos de teclado
-
-| Atalho | Ação |
-|---|---|
-| **Ctrl+N** | Criar novo incidente. |
-| **Ctrl+I** | Importar dados JSON do Zabbix a partir do clipboard. |
-| **Ctrl+Shift+V** | Ler a imagem atual do clipboard com OCR. |
-| **Win+Shift+S** | Abrir a ferramenta de captura de tela do Windows. |
+### Atalhos de Teclado
+- **`Ctrl+N`**: Novo incidente.
+- **`Ctrl+I`**: Importar JSON do Zabbix do clipboard.
+- **`Ctrl+Shift+V`**: Ler print do clipboard com OCR local.
+- **`Alt+1` / `Alt+2` / `Alt+3`**: Alternar canal para WhatsApp, Teams ou E-mail.
+- **`Win+Shift+S`**: Capturar print da tela no Windows.
+- **`Esc`**: Fechar janelas secundárias e diálogos modais.
 
 ---
 
-## Atendimento de ponta a ponta
+## 3. Fluxo de Atendimento Passo a Passo
 
-1. Abra o NOCFlow e clique em **Conectar** na faixa superior Zabbix (uma vez a cada sessão de até 12 horas).
-2. Na página do evento ou lista de problemas do Zabbix, expanda o painel **NOCFlow — Zabbix e Movidesk** e clique em **Enviar ao NOCFlow**.
-3. Na aba **Incidente**, confira os dados preenchidos automaticamente. Se o incidente usar regras específicas de cliente, consulte a **Central operacional** para avaliar o perfil.
-4. Confira a aba **Evidências** (a extensão já anexa a imagem renderizada de *Host / Trigger / Severity* quando enviada da página do evento).
-5. Clique em **Criar ticket**. O Edge abrirá o formulário do Movidesk, selecionará e confirmará o tipo **Interno** antes de preencher título, link + print, categoria, urgência, solicitante/serviço (quando presentes nas tags) e apontamento de horas (`00:03` / `Observability`). A automação não seleciona ação pública/interna. O corpo mantém a assinatura existente e remove linhas vazias extras entre ela e a evidência.
-6. Revise os campos no Movidesk e clique em **Salvar**. O número do protocolo voltará sozinho para o incidente correspondente no NOCFlow.
-7. Na aba **Comunicar**, selecione o canal e o modelo desejado, preencha o acionamento/time responsável se aplicável e copie o comunicado.
-8. Clique em **Próximo** para avançar ao próximo item pendente ou arquive o atendimento concluído.
+### Passo 1 — Conectar e Importar do Zabbix
+1. Clique em **Conectar** no topo do NOCFlow. A conexão fica ativa por **10 horas**.
+2. No Zabbix (página do evento `tr_events.php` ou lista `action=problem.view`), expanda o painel **`NOCFlow — Zabbix e Movidesk`** no canto inferior esquerdo.
+3. Clique em **Enviar ao NOCFlow** (ou selecione até 100 linhas na lista e clique em **Enviar selecionados ao NOCFlow**).
+   - O coletor envia os campos do alerta, as tags (como `Movidesk` para solicitante e tecnologia para serviço) e a imagem renderizada de *Host / Trigger / Severity*.
 
----
+### Passo 2 — Abrir o Ticket no Movidesk
+1. Revise os dados na aba **Incidente** e clique em **Criar ticket**.
+2. O Edge abrirá o formulário do Movidesk, confirmará o tipo **Interno** e preencherá:
+   - **Título:** `{alerta} - {servidor}`
+   - **Descrição:** link do Zabbix + print da evidência + **1 linha em branco** antes da assinatura do analista.
+   - **Classificação e Horas:** Categoria (`Alerta`), Urgência (`1` a `4`), Solicitante e Serviço (via tags), Tempo apontado (`00:03`) e Atividade (`Observability`).
+3. Revise e clique em **Salvar** no Movidesk. O número gerado retorna sozinho para o campo **Ticket** do incidente no NOCFlow.
 
-## Importar alertas do Zabbix
-
-### Envio direto pela extensão
-
-1. No aplicativo, clique em **Conectar** (ou **⋯ > Conectar Zabbix**).
-2. A guia local aberta no Edge confirmará a conexão e poderá ser fechada.
-3. Abra o detalhe de um evento Zabbix (`tr_events.php` com `eventid` na URL).
-4. Expanda **NOCFlow — Zabbix e Movidesk** e clique em **Enviar ao NOCFlow**.
-5. O incidente entra imediatamente na fila. Se você já estiver editando outro item, o aplicativo preserva sua edição atual e exibe um aviso **recebido(s) · Ver** para alternar quando quiser.
-
-Além de *Host*, *Trigger/Event name*, *Severity*, *Operational data*, *Time*, *URL* e `eventid`, o coletor extrai automaticamente as **tags do evento** (como `Movidesk` para o solicitante e a tag de serviço/tecnologia) e a imagem renderizada das linhas principais.
-
-### Importação em lote (até 100 eventos)
-
-1. Na lista de problemas do Zabbix (`zabbix.php?action=problem.view`), marque os eventos desejados ou utilize o botão **Selecionar primeiras N linhas** no painel da extensão.
-2. Clique em **Enviar selecionados ao NOCFlow** (ou **Copiar selecionados para NOCFlow** seguido de **Ctrl+I** no app).
-3. O coletor aproveita os dados visíveis na tabela e busca em segundo plano (até 2 requisições simultâneas com timeout de 8s) os detalhes e tags faltantes de cada evento.
-
-### Alternativa pelo clipboard / Tampermonkey
-
-Caso utilize os scripts da pasta `tampermonkey/` (`NOCFlow-Zabbix.user.js` e `NOCFlow-Movidesk.user.js`), clique em **Copiar dados para NOCFlow** no navegador e pressione **Ctrl+I** (ou clique em **Importar dados**) no aplicativo. Mantenha apenas uma implementação ativa por página (extensão ou Tampermonkey) para evitar botões duplicados.
+### Passo 3 — Comunicar (WhatsApp, Teams e E-mail)
+1. Acesse a aba **Comunicar** e clique no botão do canal desejado (**WhatsApp**, **Teams** ou **E-mail**).
+2. Escolha o **Modelo** (*Abertura normal*, *Abertura inicial*, *Acionamento inicial*, *Acionamento*, *Atualização*, *Cobrança*, *Passagem de turno*, *Normalização* ou *Encerramento*).
+3. **No canal WhatsApp:** salve seu nome uma única vez para assinar automaticamente como `Seu Nome - Equipe NOC`.
+4. **No canal E-mail:**
+   - **Destinatários por Empresa:** cadastre empresas em **`+ Empresa`** (separando e-mails por `;`, vírgula ou quebra de linha). Se o nome da empresa constar no Servidor ou Alerta (ex.: `... - Manserv`), ela é selecionada automaticamente.
+   - Clique em **`Copiar Para (N)`**, **`Copiar Cc (N)`** e **`Copiar assunto`** para colar nos campos do seu cliente de e-mail.
+   - No rodapé da prévia, escolha rapidamente **`Anexo: Print completo`** ou **`Recorte`** (ou clique em **`Recortar`** para abrir o editor de 3 faixas: *Host*, *Trigger* e *Severity*).
+   - Clique em **`Copiar e-mail`**: o NOCFlow copia o texto formatado com quebras de linha preservadas (`<br>` em HTML + texto puro) junto com a imagem da evidência logo abaixo.
 
 ---
 
-## Organizar a fila
+## 4. Central Operacional
 
-- **Visão de Fila:** clique em **Fila** para pesquisar por texto livre ou filtrar por severidade, presença de ticket e etapa (**Recebido**, **Em revisão**, **Aguardando ticket**, **Pronto para comunicar**, **Arquivado**).
-- **Deduplicação inteligente por `(instância, eventid)`:** reimportar o mesmo evento atualiza dados novos sem apagar o ticket já vinculado nem sobrescrever campos que você editou manualmente. Quando um valor novo diverge da sua edição manual, um aviso aparece em **Pendências** permitindo escolher entre **Aplicar valor selecionado** ou **Manter minha revisão**.
-- **Proteção contra remoções acidentais:** **⋯ > Desfazer remoção** restaura até os últimos 20 incidentes removidos na sessão atual.
+Clique em **Central operacional** no topo da janela para gerenciar o turno em 5 abas:
 
----
-
-## Capturar imagens e usar OCR
-
-| Ação | Quando usar |
-|---|---|
-| **Ler print** (`Ctrl+Shift+V`) | Lê a imagem copiada no clipboard (`Win+Shift+S`) e preenche os campos via OCR local do Windows. |
-| **Evidências > Adicionar print** | Apenas anexa a imagem do clipboard ao incidente atual sem alterar os campos de texto. |
-| **⋯ > Reler print guardado** | Reexecuta o OCR local sobre a imagem já anexada ao incidente. |
-| **⋯ > Completar com IA** | Consulta Groq (texto do OCR) e/ou Gemini (visão) sob demanda apenas para preencher os campos que ficaram em branco. |
+1. **Pendências:** lista todos os atendimentos ativos ordenados pelo prazo da próxima ação, destacando itens **`VENCIDA`** em vermelho. Duplo-clique abre o atendimento.
+2. **Acompanhamento:** linha do tempo auditável do incidente, agendamento de follow-up (**Próxima ação**), avaliação determinística de regras de cliente (**Avaliar regra**), vínculo de **Referências** externas e **Organizar relato com IA**.
+3. **Agenda:** cadastro de rotinas e verificações de dashboard do turno (*única*, *intervalo* ou *horários* com fuso e calendário). Rotinas vencidas ficam destacadas em vermelho e avisam no topo do aplicativo.
+4. **Procedimentos e IA:** busca local instantânea em arquivos Markdown validados (`indice.json`) filtrados por perfil e serviço, com opção de resumo/explicação citando fontes (`[id]`).
+5. **Diário e passagem:** geração de **Diário de bordo**, **Passagem de turno**, **Indicadores**, **Recorrência de tickets** e exportação direta para **CSV** ou **PDF**.
 
 ---
 
-## Preencher o Movidesk
+## 5. Utilitários no Navegador
 
-Ao clicar em **Criar ticket**, a extensão automatiza o preenchimento no Movidesk:
-
-1. **Título (Assunto):** `{alerta} - {servidor}`.
-2. **Descrição (Corpo da ação):** insere o link clicável do Zabbix e, logo abaixo dele, a imagem PNG da evidência (ou resumo estruturado em texto caso não haja imagem), preservando integralmente o texto prévio e a assinatura do analista no editor (Froala, TinyMCE, Kendo ou iframe).
-3. **Tipo do ticket e da ação:** seleciona automaticamente **Interno** (independentemente do valor numérico interno do rádio/botão na instância).
-4. **Categoria e Urgência:** seleciona a categoria (`Alerta`) e mapeia a severidade do Zabbix para a urgência correspondente (`Disaster/Crítica` → `1`, `High/Alta` → `2`, `Average/Média` → `3`, `Warning/Information/Baixa` → `4`), suportando campos nativos, Select2 (AJAX) e Kendo UI.
-5. **Solicitante e Serviço pelas Tags:** quando o evento do Zabbix possui tags de identificação (ex.: `Movidesk` para cliente/solicitante e tag de serviço/tecnologia como `DBA SQL`), a extensão pesquisa nos endpoints do Movidesk e preenche automaticamente os campos **Solicitante** e **Serviço**.
-6. **Apontamento de Horas e Atividade:** preenche automaticamente **Tempo apontado** com `00:03` (preservando o campo *Tempo contabilizado* intacto e abrindo a seção de horas caso esteja recolhida) e seleciona a atividade **Observability**.
-
-Em **Pendências / Atendimento**, você confere o status individual de cada um dos 9 itens (`título`, `descrição`, `tipo Interno`, `categoria`, `urgência`, `tempo apontado`, `atividade`, `solicitante` e `serviço`) como **preenchido**, **pendente** ou **não localizado**.
-
-### Retorno automático do número do ticket
-
-Assim que você clica em **Salvar** no Movidesk, a extensão detecta o número gerado (seja pela mudança de URL para `/Ticket/Edit/{id}` ou pelo modal de protocolo `.protocol-modal`) e devolve o número e o link definitivo diretamente para o incidente de origem no NOCFlow — mesmo que você já tenha mudado para outro item da fila.
+- **No Zabbix:** além de enviar ao app, o painel oferece **`Copiar link + imagem`**, **`Copiar Trigger - Host`**, **`Copiar chamado reconhecido`** e **`Copiar imagem Host / Trigger / Severity`**.
+- **No Movidesk:** painel no canto inferior esquerdo com **`Copiar número`**, **`Copiar ticket + assunto`** e **`Copiar template`** (número, assunto e link em linhas separadas).
+- **No WhatsApp Web:** clique no ícone da extensão **NOCFlow** na barra do Edge, informe seu nome e clique em **`Assinar mensagem em edição`** para inserir `Nome - Equipe NOC` no topo da mensagem sem enviá-la.
 
 ---
 
-## Preparar comunicados e recortes
+## 6. Configurações (`.env`), Segurança e Backup
 
-### Canais e Modelos
+Abra **`⋯` > `Configurações`** para editar o `.env`:
 
-Na aba **Comunicar**, selecione o canal (**WhatsApp**, **Teams** ou **E-mail**) e escolha o modelo adequado ao momento do atendimento:
-
-| Modelo | Finalidade |
-|---|---|
-| **Abertura normal** | Comunicação padrão de abertura com dados do alerta, servidor e ticket (sem saudação de horário). |
-| **Abertura inicial** | Comunicação de abertura incluindo saudação automática (*Bom dia* / *Boa tarde* / *Boa noite*) no WhatsApp. |
-| **Acionamento inicial** | Permite comunicar um acionamento mesmo antes do número do ticket quando autorizado pela regra do perfil operacional (`comunicar_sem_ticket`). |
-| **Acionamento** | Registro de escalonamento para equipe/plantonista (exige informar **Acionamento** ou **Time responsável**). |
-| **Atualização** | Informa andamento ou posicionamento técnico sobre um atendimento em curso (exige preencher o campo de descrição da atualização). |
-| **Normalização** | Comunica o encerramento/estabilização do incidente (exige descrever a normalização). |
-
-### Recortar evidência (`Host`, `Trigger` e `Severity`)
-
-Na aba **Evidências**, clique em **Recortar print** para abrir o editor com zoom:
-1. Selecione com o mouse as caixas correspondentes a **Host**, **Trigger** e **Severity**.
-2. Clique em **Salvar recortes**.
-3. Em **Imagem no ticket**, escolha se o Movidesk deve receber o **Print completo** ou o **Recorte** empilhado. Você também pode clicar em **Copiar recorte** para colar a montagem diretamente no corpo do e-mail ou conversa.
-
----
-
-## Central Operacional (Regras, Agenda, Conhecimento e Relatórios)
-
-Clique no botão **Central operacional** na faixa superior do NOCFlow para abrir a janela dedicada de gestão do turno, organizada em 5 abas:
-
-### 1. Atendimento e Linha do Tempo
-- Classifique a **Origem** (`Zabbix`, `Grafana`, `Teams`, `WhatsApp`, `E-mail`, `Telefone`, `Manual`, `Dynatrace`, `Jira`), a **Natureza** (`Incidente`, `Solicitação`, `Encaminhamento`, `Mudança`, `Rotina`), o **Perfil operacional**, o **Serviço**, a **Prioridade** e o **Relato original**.
-- **Linha do tempo:** registre cada interação do atendimento (*Acionamento*, *Tentativa de contato*, *Resposta recebida*, *Escalonamento*, *Atualização*, *Observação*) com horário e autor.
-- **Acompanhamento (Follow-up):** agende a próxima ação com prazo (em minutos ou horário ISO) e conclua o acompanhamento quando resolvido. Atendimentos com prazo vencido destacam um alerta no botão da Central na janela principal.
-- **Referências externas:** vincule números de chamados secundários, links de mudanças ou identificadores externos.
-
-### 2. Regras Operacionais e Perfis
-- Carregue um arquivo JSON de perfis operacionais (**Carregar perfis**) ou gere um modelo base (**Salvar exemplo**).
-- Clique em **Avaliar regra** para que o motor determinístico analise o incidente atual considerando **calendário, fuso horário, feriados, janelas de turno, severidade e serviço**.
-- O resultado informa: prioridade recomendada, política de ticket (`criar` novo ou `vincular` a existente), permissão de comunicar sem ticket, prazos de primeiro acionamento/atualização e eventuais conflitos entre regras, permitindo clicar em **Aplicar ao atendimento**.
-
-### 3. Agenda Operacional e Rotinas de Turno
-- Cadastre checklists e tarefas periódicas do turno (**Nova rotina**) com frequência **diária**, **dias úteis**, **semanal** ou por **intervalo em minutos**, respeitando o fuso horário configurado.
-- Quando uma rotina atinge o horário previsto, o botão na tela principal muda para **`Central · N vencida(s)`**.
-- Selecione a rotina e clique em **Registrar execução** para documentar o resultado (`ok`, `alerta` ou `falha`), a evidência observada e o operador responsável, avançando automaticamente o próximo agendamento.
-
-### 4. Base de Conhecimento Local e Consulta com IA
-- Selecione uma pasta local contendo um arquivo `indice.json` e documentos de procedimentos em Markdown (**Selecionar base** ou **Salvar índice exemplo**).
-- Clique em **Buscar procedimentos** para localizar instantaneamente os trechos validados aplicáveis ao perfil e serviço do atendimento atual.
-- Opcionalmente, use **Responder com IA** ou **Revisar lacunas com IA**: a IA recebe exclusivamente os trechos locais encontrados na busca e responde citando obrigatoriamente os identificadores `[id]` das fontes.
-
-### 5. Relatórios, Recorrência, Passagem de Turno e Exportação (CSV / PDF)
-- **Diário de bordo:** consolida todos os eventos registrados na fila e na agenda dentro do período informado.
-- **Passagem de turno:** gera o resumo estruturado de chamados em andamento, acompanhamentos pendentes, rotinas vencidas e ocorrências do plantão, permitindo registrar formalmente a passagem com nome do responsável e observações.
-- **Indicadores:** exibe métricas reproduzíveis em JSON (volumes por etapa, severidade, origem, cumprimentos de prazo e execuções de rotina).
-- **Auditoria de recorrência:** analisa toda a fila de forma determinística para identificar hosts e alertas repetidos, contabilizando ocorrências, tickets distintos abertos, itens sem ticket e aberturas em lote.
-- **Exportação:** copie o texto, exporte os atendimentos para planilha (**Exportar CSV**) ou gere um documento formatado e paginado (**Exportar PDF**).
-
-### Assistente de IA para Relatos (Sob Demanda)
-- Na aba de atendimento da Central, preencha um relato livre (por exemplo, uma mensagem recebida no Teams ou WhatsApp) e clique em **Organizar relato com IA**.
-- O assistente sugere o preenchimento estruturado dos campos em uma janela de revisão com caixas de seleção (*checkboxes*), permitindo escolher exatamente quais sugestões aplicar sem sobrescrever nada sem sua confirmação.
-
----
-
-## Utilitários do navegador e WhatsApp Web
-
-### Painel no Zabbix (`NOCFlow — Zabbix e Movidesk`)
-
-- **Ações principais em destaque:**
-  - **Enviar ao NOCFlow** (na página do evento) / **Enviar selecionados ao NOCFlow** (na lista de problemas).
-  - **Copiar link + imagem**: copia link clicável + tabela renderizada (*Host / Trigger / Severity*) pronta para colar em editores ricos.
-- **Mais opções:**
-  - **Copiar Trigger - Host**, **Copiar chamado reconhecido** e **Copiar imagem Host / Trigger / Severity**.
-
-### Painel no Movidesk (`NOCFlow — Zabbix e Movidesk`)
-
-- **Copiar número:** copia apenas o protocolo do ticket salvo.
-- **Copiar ticket + assunto:** copia `{número} - {assunto}`.
-- **Copiar template:** botão em destaque que copia número, assunto e link definitivo em linhas separadas.
-
-### Assinatura no WhatsApp Web (Popup da Extensão)
-
-1. Com o **WhatsApp Web** aberto em uma conversa, clique no ícone da extensão **NOCFlow** na barra de ferramentas do Microsoft Edge.
-2. Digite seu nome (ex.: `João Vitor`) — ele fica salvo no navegador para os próximos usos.
-3. Clique em **Assinar mensagem**.
-4. A extensão insere o cabeçalho **`*João Vitor - Equipe NOC*`** no topo da mensagem que você está digitando na caixa de texto do WhatsApp Web, **preservando formatações existentes (negrito, quebras de linha)**, **sem duplicar** caso já esteja assinada e **sem enviar a mensagem automaticamente**.
-
----
-
-## Configurar o aplicativo e a IA
-
-Abra **⋯ > Configurações** no aplicativo (ou execute `Abrir configuracoes.cmd` na pasta distribuída) para editar o arquivo `.env`:
-
-| Variável | Padrão | Finalidade |
+| Variável | Padrão | Descrição |
 |---|---|---|
-| `NOME_OPERADOR` | vazio | Nome exibido antes de `Equipe NOC` nos comunicados de WhatsApp e nos registros da Central Operacional. |
-| `MOVIDESK_URL` | `https://empresa.movidesk.com` | URL base da instância do Movidesk da sua organização. |
-| `MOVIDESK_LOGIN_TIMEOUT_SECONDS` | `120` | Tempo máximo (5–300s) aguardando login/abertura do formulário no Edge. |
-| `MOVIDESK_RETORNO_TIMEOUT_SECONDS` | `28800` | Tempo máximo (60–86400s, padrão 8h) aguardando o salvamento e retorno do número do ticket. |
-| `OCR_TIMEOUT_SECONDS` | `15` | Tempo limite (5–300s) para leitura local de imagem via Windows OCR. |
-| `IA_AUTOMATICA` | `false` | Se `true`, o botão **Ler print** passa a complementar automaticamente campos faltantes usando IA. |
-| `GROQ_API_KEY` | vazio | Chave opcional da API Groq para extração de texto e assistente da Central Operacional. |
-| `GROQ_MODEL` | `openai/gpt-oss-120b` | Modelo textual utilizado na Groq. |
-| `GROQ_FALLBACK_ENABLED` | `true` | Habilita o uso da Groq quando a chave estiver configurada. |
-| `GROQ_TIMEOUT_SECONDS` | `30` | Timeout (5–300s) por chamada à Groq. |
-| `GROQ_MAX_COMPLETION_TOKENS` | `2048` | Limite de tokens de saída (128–32768) na Groq. |
-| `GEMINI_API_KEY` | vazio | Chave opcional da API Google Gemini para leitura visual complementar de prints. |
-| `GEMINI_MODEL` | `gemini-3.8-flash` | Modelo multimodal configurado para o Gemini. |
-| `GEMINI_TIMEOUT_SECONDS` | `60` | Timeout (5–300s) por chamada ao Gemini. |
-| `GEMINI_MAX_OUTPUT_TOKENS` | `2048` | Limite de tokens de saída (128–32768) no Gemini. |
+| `MOVIDESK_URL` | `https://empresa.movidesk.com` | URL HTTPS base do Movidesk. |
+| `NOME_OPERADOR` | vazio | Nome do operador usado nos comunicados e registros. |
+| `MOVIDESK_LOGIN_TIMEOUT_SECONDS` | `120` | Tempo limite (5–300s) para abertura do formulário no Edge. |
+| `MOVIDESK_RETORNO_TIMEOUT_SECONDS` | `28800` | Tempo limite (60–86400s, padrão 8h) aguardando salvar o ticket. |
+| `OCR_TIMEOUT_SECONDS` | `15` | Timeout (5–300s) do OCR nativo do Windows. |
+| `IA_EXTERNA_APROVADA` | `false` | Deve ser `true` para autorizar envio de texto redigido às APIs de IA (exige confirmação na janela de prévia a cada chamada). |
+| `IA_AUTOMATICA` | `false` | Se `true` (e `IA_EXTERNA_APROVADA=true`), complementa lacunas do OCR automaticamente. |
+| `GROQ_API_KEY` / `GEMINI_API_KEY` | vazio | Chaves opcionais migradas automaticamente na inicialização para `.noc_data/credenciais.dpapi` (criptografadas via Windows DPAPI). |
+| `GROQ_MODEL` / `GEMINI_MODEL` | `openai/gpt-oss-120b` / `gemini-3.8-flash` | Modelos utilizados nas consultas opcionais de IA. |
+
+### Onde ficam os dados locais
+- **No Executável:** `%LOCALAPPDATA%\NOCFlow\` (`.env`, `.noc_data\rascunho.json` protegido com DPAPI, `.noc_data\destinatarios.json`, `.noc_data\extensao.json` e `.noc_data\logs\noc.jsonl`).
+- **No Código-Fonte:** na raiz do projeto (`.env` e pasta `.noc_data\`).
+- **Limpeza de rascunhos e logs:** `python scripts/limpar_dados_locais.py --diretorio "%LOCALAPPDATA%\NOCFlow"`.
 
 ---
 
-## Acompanhar consumo e desempenho
+## 7. Solução Rápida de Problemas
 
-Em **⋯ > Consumo e detalhes**, o operador acompanha:
-- Tokens de entrada, saída e total reportados por cada provedor (Groq e Gemini) na sessão atual.
-- Limites e cotas restantes informados pelos cabeçalhos da última resposta da Groq.
-- Proporção de incidentes resolvidos com operação 100% local versus chamadas de IA.
-- Tempo de processamento e origem da coleta de cada item da fila.
-
----
-
-## Dados, backup e encerramento
-
-| Conteúdo | Executável Windows (`NOCFlow.exe`) | Execução pelo Código-Fonte (`app_noc.py`) |
-|---|---|---|
-| Configurações (`.env`) | `%LOCALAPPDATA%\NOCFlow\.env` | `.env` na raiz do repositório |
-| Fila, imagens, agenda e histórico | `%LOCALAPPDATA%\NOCFlow\.noc_data\rascunho.json` | `.noc_data/rascunho.json` |
-| Domínios Zabbix da extensão | `%LOCALAPPDATA%\NOCFlow\.noc_data\extensao.json` | `.noc_data/extensao.json` |
-| Logs rotativos da aplicação | `%LOCALAPPDATA%\NOCFlow\.noc_data\logs\noc.jsonl` | `.noc_data/logs/noc.jsonl` |
-| Pasta da extensão para o Edge | `%LOCALAPPDATA%\NOCFlow\edge_extension` | `.noc_data/edge_extension` (ou `edge_extension/`) |
-
-Para fazer backup completo da sua operação local, feche o aplicativo aguardando **✓ Salvo** e copie o arquivo `.env` e a pasta `.noc_data/`.
-
----
-
-## Solução de problemas
-
-| Situação | Como resolver |
+| Sintoma | Solução |
 |---|---|
-| **"Origem Zabbix não configurada."** | Verifique se a URL do seu Zabbix consta em `.noc_data/extensao.json` (ou no `manifest.json`), recarregue a extensão em `edge://extensions/` e aperte **F5** na aba do Zabbix. |
-| **Painel não aparece no Zabbix ou Movidesk** | Confirme que a extensão está ativa em `edge://extensions/`, recarregue-a e pressione **F5** na página. Na página de evento Zabbix, a URL deve conter `tr_events.php` ou `action=problem.view`. |
-| **Envio do Zabbix pede conexão** | No NOCFlow, clique em **Conectar** (ou **Reconectar**) na faixa Zabbix e aguarde a confirmação na guia aberta. |
-| **Movidesk abre mas não preenche** | Confira se você já está logado no Movidesk naquele perfil do Edge e se a extensão está instalada no mesmo perfil. |
-| **Solicitante ou Serviço não preencheu no ticket** | O preenchimento automático desses dois campos depende da existência das tags de solicitante (`Movidesk`) e de serviço/tecnologia no evento do Zabbix e de correspondência única na busca do Movidesk; caso não haja tag, selecione-os manualmente. |
-| **Número do ticket não retornou sozinho** | Mantenha a guia até aparecer o número na URL ou no modal de protocolo; se a guia foi fechada antes, digite o número no campo **Ticket**. |
-| **Assinatura no WhatsApp Web informa erro** | Certifique-se de estar com uma conversa aberta no `https://web.whatsapp.com` e com um texto já iniciado na caixa de mensagem do rodapé antes de clicar em **Assinar mensagem**. |
-| **Nenhuma imagem no clipboard ao clicar em Ler print** | Faça uma nova captura com **Win+Shift+S** (copiar um arquivo `.png` pelo Windows Explorer não copia os pixels para a área de transferência). |
-| **Porta 18764 ocupada** | Feche outra instância aberta do NOCFlow no Gerenciador de Tarefas e tente novamente. |
+| **"Origem Zabbix não configurada"** | Adicione a URL HTTPS do Zabbix em `.noc_data/extensao.json`, reinicie o NOCFlow, clique em **Recarregar** em `edge://extensions/` e dê **F5** no Zabbix. |
+| **Envio do Zabbix pede conexão** | Clique em **Conectar / Reconectar** na faixa superior do NOCFlow (a sessão dura 10 horas). |
+| **Quebras de linha no e-mail** | Use sempre o botão **`Copiar e-mail`** na aba **Comunicar**; ele publica `HTML Format` com tags `<br>` explícitas e texto puro `\r\n`. |
+| **Solicitante ou Serviço não preencheu** | Verifique se o evento no Zabbix possui a tag `Movidesk: <código>` e tag de tecnologia/serviço com correspondência única no Movidesk. |
+| **Sem imagem ao clicar em Ler print** | Capture novamente com **`Win+Shift+S`** (copiar um arquivo do Explorer não coloca os pixels da imagem no clipboard). |

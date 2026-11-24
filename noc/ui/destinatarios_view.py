@@ -1,10 +1,12 @@
 """Cadastro e cópia de listas de e-mail, independente do incidente ativo."""
 
+import re
 import tkinter as tk
 from tkinter import messagebox, ttk
 
 import pyperclip
 
+from ..atendimento import normalizar
 from ..services.destinatarios import carregar, emails, salvar, validar
 
 
@@ -19,23 +21,47 @@ class DestinatariosView(ttk.Frame):
         self.pronto = False
         self.ocupado = False
         self.dialogo = None
+        self.escolha_manual = False
+        self.ultimo_contexto = ""
         self.columnconfigure(1, weight=1)
-        ttk.Label(self, text="Empresa").grid(row=0, column=0, padx=(0, 6))
-        self.seletor = ttk.Combobox(self, textvariable=self.nome, state="readonly", width=20)
+        ttk.Label(self, text="Empresa", style="Discreto.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.seletor = ttk.Combobox(self, textvariable=self.nome, state="readonly", width=18)
         self.seletor.grid(row=0, column=1, sticky="ew")
-        self.seletor.bind("<<ComboboxSelected>>", lambda _: self.atualizar())
-        self.nova = ttk.Button(self, text="Cadastrar", command=lambda: self.editar(nova=True))
-        self.nova.grid(row=0, column=2, padx=(6, 0))
-        self.edicao = ttk.Button(self, text="Editar", command=self.editar)
-        self.edicao.grid(row=0, column=3, padx=(6, 0))
-        linha = ttk.Frame(self)
-        linha.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(4, 6))
-        self.para = ttk.Button(linha, text="Copiar Para", command=lambda: self.copiar("para"))
-        self.para.pack(side="left")
-        self.cc = ttk.Button(linha, text="Copiar Cc", command=lambda: self.copiar("cc"))
-        self.cc.pack(side="left", padx=6)
-        ttk.Label(linha, textvariable=self.resumo, style="Discreto.TLabel").pack(side="left")
+        self.seletor.bind("<<ComboboxSelected>>", self.ao_selecionar_manual)
+        self.para = ttk.Button(self, text="Copiar Para", style="Compacto.TButton", command=lambda: self.copiar("para"))
+        self.para.grid(row=0, column=2, padx=(6, 0))
+        self.cc = ttk.Button(self, text="Copiar Cc", style="Compacto.TButton", command=lambda: self.copiar("cc"))
+        self.cc.grid(row=0, column=3, padx=(4, 0))
+        self.edicao = ttk.Button(self, text="Editar", style="Compacto.TButton", command=self.editar)
+        self.edicao.grid(row=0, column=4, padx=(6, 0))
+        self.nova = ttk.Button(self, text="+ Empresa", style="Compacto.TButton", command=lambda: self.editar(nova=True))
+        self.nova.grid(row=0, column=5, padx=(4, 0))
         self.atualizar()
+
+    def ao_selecionar_manual(self, _=None):
+        self.escolha_manual = True
+        self.atualizar()
+
+    def sugerir_por_contexto(self, dados):
+        if not self.pronto or not self.empresas:
+            return
+        contexto = f"{dados.get('servidor', '')} | {dados.get('alerta', '')}"
+        if contexto != self.ultimo_contexto:
+            self.ultimo_contexto = contexto
+            self.escolha_manual = False
+        if self.escolha_manual and self.selecionada():
+            return
+        texto = normalizar(contexto)
+        if not texto.strip(" |"):
+            return
+        candidatas = []
+        for item in self.empresas:
+            termo = normalizar(item["empresa"]).strip()
+            if termo and re.search(rf"(?<![a-z0-9]){re.escape(termo)}(?![a-z0-9])", texto):
+                candidatas.append(item["empresa"])
+        if len(candidatas) == 1 and self.nome.get() != candidatas[0]:
+            self.nome.set(candidatas[0])
+            self.atualizar()
 
     def carregar(self):
         caminho = self.caminho
@@ -52,6 +78,8 @@ class DestinatariosView(ttk.Frame):
                 return
             self.empresas = empresas
             self.pronto = True
+            if hasattr(self.app, "obter_dados"):
+                self.sugerir_por_contexto(self.app.obter_dados())
             self.atualizar()
         self.app.tarefas.enviar("destinatarios_carga", trabalhar, concluir)
 
@@ -64,8 +92,12 @@ class DestinatariosView(ttk.Frame):
         livre = self.pronto and not self.ocupado
         self.nova.configure(state="normal" if livre else "disabled")
         self.edicao.configure(state="normal" if livre and item else "disabled")
-        for campo, botao in (("para", self.para), ("cc", self.cc)):
-            botao.configure(state="normal" if livre and item and item[campo] else "disabled")
+        for campo, rotulo, botao in (("para", "Copiar Para", self.para), ("cc", "Copiar Cc", self.cc)):
+            qtd = len(item[campo]) if item else 0
+            botao.configure(
+                text=f"{rotulo} ({qtd})" if qtd else rotulo,
+                state="normal" if livre and qtd else "disabled",
+            )
         if self.pronto:
             self.resumo.set(f'{len(item["para"])} Para · {len(item["cc"])} Cc' if item else "Selecione ou cadastre uma empresa")
 
@@ -74,8 +106,11 @@ class DestinatariosView(ttk.Frame):
         if not item or not item[campo]:
             return
         texto = "; ".join(item[campo])
+        rotulo_campo = "Para" if campo == "para" else "Cc"
         def concluir(_):
-            self.resumo.set(f'{"Para" if campo == "para" else "Cc"} copiado')
+            self.resumo.set(f"{rotulo_campo} copiado")
+            if hasattr(self.app, "informar"):
+                self.app.informar(f"Destinatários ({rotulo_campo}) de {item['empresa']} copiados.")
         self.app.tarefas.enviar("destinatarios_copia", lambda: pyperclip.copy(texto), concluir)
 
     def editar(self, nova=False):

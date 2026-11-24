@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 
-from .atendimento import ETAPAS, etapa_incidente, normalizar, severidade_padrao
+from ..atendimento import ETAPAS, etapa_incidente, normalizar, severidade_padrao
 
 
 class PainelFila(ttk.Frame):
@@ -24,6 +24,8 @@ class PainelFila(ttk.Frame):
         filtros.pack(fill="x", pady=(0, 4))
         ttk.Label(filtros, text="Buscar:").pack(side="left")
         ttk.Entry(filtros, textvariable=self.busca, width=18).pack(side="left", fill="x", expand=True, padx=(6, 8))
+        self.btn_limpar_filtros = ttk.Button(filtros, text="Limpar filtros", style="Compacto.TButton", command=self.limpar_filtros)
+        self.btn_limpar_filtros.pack(side="right")
         linha_filtros = ttk.Frame(self)
         linha_filtros.pack(fill="x", pady=(0, 4))
         for variavel, valores, largura in (
@@ -39,10 +41,14 @@ class PainelFila(ttk.Frame):
         area = ttk.Frame(self)
         area.pack(fill="both", expand=True)
         colunas = ("servidor", "alerta", "severidade", "horario", "etapa", "ticket")
-        self.lista = ttk.Treeview(area, columns=colunas, show="headings", height=4, selectmode="browse")
+        self.lista = ttk.Treeview(area, columns=colunas, show="headings", height=8, selectmode="browse")
         for coluna, rotulo, largura in zip(colunas, ("Servidor", "Alerta", "Severidade", "Horário", "Etapa", "Ticket"), (160, 220, 90, 140, 170, 75), strict=True):
             self.lista.heading(coluna, text=rotulo)
             self.lista.column(coluna, width=largura, minwidth=60, stretch=True)
+        self.lista.tag_configure("desastre", background="#fef2f2", foreground="#991b1b")
+        self.lista.tag_configure("alta", background="#fff7ed", foreground="#9a3412")
+        self.lista.tag_configure("media", background="#fefce8", foreground="#854d0e")
+        self.lista.tag_configure("arquivado", foreground="#667085")
         vertical = ttk.Scrollbar(area, orient="vertical", command=self.lista.yview)
         horizontal = ttk.Scrollbar(area, orient="horizontal", command=self.lista.xview)
         self.lista.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
@@ -52,6 +58,7 @@ class PainelFila(ttk.Frame):
         area.columnconfigure(0, weight=1)
         area.rowconfigure(0, weight=1)
         self.lista.bind("<<TreeviewSelect>>", self.selecionar)
+        self.lista.bind("<Double-1>", self.selecionar)
         rodape = ttk.Frame(self)
         rodape.pack(fill="x", pady=(4, 0))
         ttk.Label(rodape, textvariable=self.contadores, style="Discreto.TLabel").pack(side="left", fill="x", expand=True)
@@ -59,6 +66,13 @@ class PainelFila(ttk.Frame):
         self.btn_arquivar.pack(side="right")
         self.btn_proximo = ttk.Button(rodape, text="Próximo pendente", command=ao_proximo)
         self.btn_proximo.pack(side="right", padx=6)
+
+    def limpar_filtros(self):
+        self.busca.set("")
+        self.severidade.set("Todas as severidades")
+        self.ticket.set("Todos os tickets")
+        self.etapa.set("Ativos")
+        self.filtrar()
 
     def agendar_filtro(self, *_):
         if self.filtro_after:
@@ -90,12 +104,20 @@ class PainelFila(ttk.Frame):
             etapa, severidade = etapa_incidente(item), severidade_padrao(d.get("severidade", ""))
             valores = (d.get("servidor") or "Novo", d.get("alerta") or "Sem alerta", severidade,
                        d.get("horario", ""), etapa, d.get("ticket", ""))
+            tag = (
+                "arquivado" if meta.get("arquivado")
+                else "desastre" if severidade == "Desastre"
+                else "alta" if severidade == "Alta"
+                else "media" if severidade == "Média"
+                else ""
+            )
+            tags = (tag,) if tag else ()
             identificador = item["id"]
             if identificador not in self.registros:
-                self.lista.insert("", "end", iid=identificador, values=valores)
-            elif self.registros[identificador] != valores:
-                self.lista.item(identificador, values=valores)
-            self.registros[identificador] = valores
+                self.lista.insert("", "end", iid=identificador, values=valores, tags=tags)
+            elif self.registros[identificador] != (valores, tags):
+                self.lista.item(identificador, values=valores, tags=tags)
+            self.registros[identificador] = (valores, tags)
             mostrar = (not busca or busca in normalizar(" ".join(valores)))
             mostrar &= self.severidade.get() == "Todas as severidades" or severidade == self.severidade.get()
             mostrar &= self.ticket.get() == "Todos os tickets" or bool(d.get("ticket")) == (self.ticket.get() == "Com ticket")

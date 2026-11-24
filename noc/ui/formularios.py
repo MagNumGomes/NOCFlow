@@ -8,7 +8,8 @@ from tkinter import ttk
 def texto_area(pai, altura=10, editavel=False):
     area = ttk.Frame(pai)
     area.pack(fill="both", expand=True, pady=4)
-    texto = tk.Text(area, wrap="word", height=altura, width=1, font=("Segoe UI", 10), padx=8, pady=8)
+    texto = tk.Text(area, wrap="word", height=altura, width=1, font=("Segoe UI", 10),
+                    relief="flat", background="white", foreground="#182230", padx=10, pady=8)
     barra = ttk.Scrollbar(area, command=texto.yview)
     texto.configure(yscrollcommand=barra.set)
     barra.pack(side="right", fill="y")
@@ -29,12 +30,13 @@ def dialogo(pai: tk.Misc, titulo: str, campos: list, confirmar: Callable, ao_sal
     janela = tk.Toplevel(pai)
     janela.title(titulo)
     janela.transient(pai)
+    janela.configure(background="#f6f7f9")
     janela.geometry("700x640" if len(campos) > 10 else "680x520")
     aviso = tk.StringVar(janela)
-    ttk.Label(janela, textvariable=aviso, wraplength=640).pack(side="bottom", fill="x", padx=12, pady=4)
+    ttk.Label(janela, textvariable=aviso, style="Erro.TLabel", wraplength=640).pack(side="bottom", fill="x", padx=12, pady=4)
     botoes = ttk.Frame(janela, padding=8)
     botoes.pack(side="bottom", fill="x")
-    canvas = tk.Canvas(janela, highlightthickness=0)
+    canvas = tk.Canvas(janela, highlightthickness=0, background="#f6f7f9")
     barra = ttk.Scrollbar(janela, command=canvas.yview)
     canvas.configure(yscrollcommand=barra.set)
     barra.pack(side="right", fill="y")
@@ -48,7 +50,8 @@ def dialogo(pai: tk.Misc, titulo: str, campos: list, confirmar: Callable, ao_sal
     for n, (chave, rotulo, valor, opcoes) in enumerate(campos):
         ttk.Label(corpo, text=rotulo, wraplength=180).grid(row=n, column=0, sticky="nw", padx=(0, 8), pady=4)
         if opcoes == "texto":
-            entrada = tk.Text(corpo, name=chave, height=5, width=35, wrap="word", font=("Segoe UI", 10))
+            entrada = tk.Text(corpo, name=chave, height=5, width=35, wrap="word",
+                              font=("Segoe UI", 10), relief="flat", background="white", padx=8, pady=6)
             entrada.insert("1.0", valor)
             valores[chave] = entrada
         else:
@@ -56,6 +59,13 @@ def dialogo(pai: tk.Misc, titulo: str, campos: list, confirmar: Callable, ao_sal
             valores[chave] = variavel
             entrada = ttk.Combobox(corpo, name=chave, textvariable=variavel, values=opcoes, state="readonly") if opcoes else ttk.Entry(corpo, name=chave, textvariable=variavel)
         entrada.grid(row=n, column=1, sticky="ew", pady=4)
+
+    def rolar(evento):
+        if not isinstance(evento.widget, (tk.Text, ttk.Combobox)):
+            canvas.yview_scroll(-int(evento.delta / 120), "units")
+
+    janela.bind("<MouseWheel>", rolar)
+    janela.bind("<Escape>", lambda _: janela.destroy())
 
     def salvar():
         try:
@@ -65,6 +75,6 @@ def dialogo(pai: tk.Misc, titulo: str, campos: list, confirmar: Callable, ao_sal
             ao_salvar()
         except (ValueError, OSError, KeyError, TypeError) as exc:
             aviso.set(str(exc))
-    ttk.Button(botoes, text="Salvar", command=salvar).pack(side="right")
+    ttk.Button(botoes, text="Salvar", style="Principal.TButton", command=salvar).pack(side="right")
     ttk.Button(botoes, text="Cancelar", command=janela.destroy).pack(side="right", padx=8)
     return janela

@@ -15,9 +15,7 @@ def verificar(relatorio):
     try:
         import tkinter as tk
 
-        import google.generativeai as genai
-        from google.ai import generativelanguage
-        from google.auth.credentials import AnonymousCredentials
+        from google import genai
         from groq import Groq
         from PIL import Image, ImageDraw, ImageFont
 
@@ -34,17 +32,15 @@ def verificar(relatorio):
         from noc.extracao_local import interpretar_ocr
         from noc.historico_atendimento import agendar_acao, registrar_evento
         from noc.incidentes import FilaIncidentes, importar_eventos
+        from noc.infra.ocr_windows import extrair_texto
+        from noc.infra.protecao import desproteger
         from noc.interface import NOCFlow
-        from noc.ocr_windows import extrair_texto
-        from noc.recortes_email import montar_recortes
         from noc.regras_operacionais import validar_perfis
+        from noc.ui.recortes_email import montar_recortes
         from noc.versao import __version__
 
-        cliente = generativelanguage.GenerativeServiceClient(
-            credentials=AnonymousCredentials(),
-            client_options={"api_endpoint": "localhost:1"},
-        )
-        cliente.transport.close()
+        with genai.Client(api_key="verificacao-offline"):
+            pass
         resultado["versao"] = __version__
         resultado["gemini_sdk"] = genai.__version__
         with Groq(api_key="verificacao-offline", max_retries=0):
@@ -121,7 +117,7 @@ def verificar(relatorio):
             root.mainloop()
             if erros_interface:
                 raise RuntimeError("\n".join(erros_interface))
-            salvo = json.loads((Path(pasta) / ".noc_data" / "rascunho.json").read_text(encoding="utf-8"))
+            salvo = json.loads(desproteger((Path(pasta) / ".noc_data" / "rascunho.json").read_bytes()))
             if not salvo["fila"]["operacional"]["rotinas"] or not salvo["fila"]["itens"][0]["meta"].get("historico"):
                 raise RuntimeError("Estado operacional não foi persistido no executável.")
             resultado["interface"] = "ok"

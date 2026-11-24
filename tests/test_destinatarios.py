@@ -73,6 +73,11 @@ class DestinatariosUITests(unittest.TestCase):
                     view.copiar("cc")
                     self.assertEqual(copiar.call_count, 2)
                 self.assertEqual(erros, [])
+                # Testa sugestão automática por contexto do servidor/alerta.
+                view.nome.set("")
+                view.sugerir_por_contexto({"servidor": "Firewall Fortigate - Cliente", "alerta": "High error rate"})
+                self.assertEqual(view.nome.get(), "Cliente")
+                self.assertEqual(view.para.cget("text"), "Copiar Para (2)")
                 # Exercita cadastro, edição e exclusão pelos controles reais.
                 def botao(texto):
                     janela = view.dialogo

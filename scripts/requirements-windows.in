@@ -1,0 +1,4 @@
+# Compilar no Windows x64 / Python 3.12 com pip-tools --generate-hashes.
+-r ../requirements-dev.txt
+-r requirements-build.txt
+setuptools

@@ -4,7 +4,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules, copy_metadata
 
 raiz = Path(SPECPATH).parent
-dados = copy_metadata("google-generativeai", recursive=True)
+dados = copy_metadata("google-genai", recursive=True)
 dados += copy_metadata("groq", recursive=True)
 dados += copy_metadata("winrt-runtime")
 dados += collect_data_files("tzdata")
@@ -18,7 +18,7 @@ analise = Analysis(
     binaries=collect_dynamic_libs("winrt"),
     datas=dados,
     # noc.ui/domain/services/infra usam imports estáticos, descobertos por Analysis.
-    hiddenimports=collect_submodules("google.ai.generativelanguage") + collect_submodules("groq") + collect_submodules("winrt"),
+    hiddenimports=collect_submodules("google.genai", filter=lambda nome: ".tests" not in nome and "._test" not in nome) + collect_submodules("groq") + collect_submodules("winrt"),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

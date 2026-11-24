@@ -26,7 +26,7 @@
   function urlEvento(link, base) {
     try {
       const url = new URL(link, base);
-      if (!/^https?:$/.test(url.protocol) || url.origin !== new URL(base).origin ||
+      if (url.protocol !== "https:" || url.origin !== new URL(base).origin ||
           !/^\d+$/.test(url.searchParams.get("eventid") || "") || !url.pathname.endsWith("/tr_events.php")) return null;
       return url;
     } catch { return null; }

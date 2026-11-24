@@ -3,7 +3,8 @@
 import logging
 import os
 import sys
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -49,6 +50,8 @@ class Config:
     ia_automatica: bool = False
     timeout_ticket: int = 28800
     nome_operador: str = ""
+    ia_externa: bool = False
+    confirmar_ia: Callable[[str, str], bool] | None = field(default=None, repr=False, compare=False)
 
     @property
     def dados_dir(self) -> Path:
@@ -93,10 +96,13 @@ def salvar_nome_operador(diretorio, nome):
 def carregar_config(diretorio: Path) -> Config:
     from dotenv import load_dotenv
 
+    from .infra.protecao import carregar_chaves
+
     try:
         preparar_config_apis(diretorio)
     except OSError:
         LOGGER.warning("Não foi possível preparar o .env; usando a configuração disponível.")
+    chaves = carregar_chaves(diretorio)
     load_dotenv(diretorio / ".env")
 
     def inteiro(nome, padrao, minimo, maximo):
@@ -110,15 +116,15 @@ def carregar_config(diretorio: Path) -> Config:
 
     url = os.getenv("MOVIDESK_URL", "https://empresa.movidesk.com").strip().rstrip("/")
     if not url_valida(url) or urlsplit(url).query or urlsplit(url).fragment:
-        raise ValueError("MOVIDESK_URL deve ser uma URL HTTP ou HTTPS válida, sem credenciais, query ou fragmento.")
+        raise ValueError("MOVIDESK_URL deve ser uma URL HTTPS válida, sem credenciais, query ou fragmento.")
     return Config(
         diretorio=diretorio,
-        api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+        api_key=chaves["GEMINI_API_KEY"],
         modelo=os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip(),
         movidesk_url=url,
         timeout_ia=inteiro("GEMINI_TIMEOUT_SECONDS", 60, 5, 300),
         timeout_login=inteiro("MOVIDESK_LOGIN_TIMEOUT_SECONDS", 120, 5, 300),
-        groq_api_key=os.getenv("GROQ_API_KEY", "").strip(),
+        groq_api_key=chaves["GROQ_API_KEY"],
         groq_modelo=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b").strip(),
         timeout_groq=inteiro("GROQ_TIMEOUT_SECONDS", 30, 5, 300),
         timeout_ocr=inteiro("OCR_TIMEOUT_SECONDS", 15, 5, 300),
@@ -126,6 +132,7 @@ def carregar_config(diretorio: Path) -> Config:
         gemini_max_output_tokens=inteiro("GEMINI_MAX_OUTPUT_TOKENS", 2048, 128, 32768),
         groq_max_completion_tokens=inteiro("GROQ_MAX_COMPLETION_TOKENS", 2048, 128, 32768),
         ia_automatica=habilitado("IA_AUTOMATICA", "false"),
+        ia_externa=habilitado("IA_EXTERNA_APROVADA", "false"),
         timeout_ticket=inteiro("MOVIDESK_RETORNO_TIMEOUT_SECONDS", 28800, 60, 86400),
         nome_operador=" ".join(os.getenv("NOME_OPERADOR", "").split()),
     )
@@ -136,7 +143,7 @@ def url_valida(valor: object) -> bool:
         return False
     try:
         url = urlsplit(valor)
-        return (url.scheme in ("http", "https") and bool(url.hostname)
+        return (url.scheme == "https" and bool(url.hostname)
                 and url.username is None and url.password is None
                 and (url.port is None or url.port > 0))
     except ValueError:

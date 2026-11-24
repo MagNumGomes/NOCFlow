@@ -5,13 +5,13 @@ import io
 import json
 import logging
 import queue
-import shutil
 import threading
 import time
 
 from .incidentes import CAMPOS_FORMULARIO, FilaIncidentes
 from .infra.imagens import decodificar_imagem
 from .infra.persistencia import arquivo_atomico
+from .infra.protecao import PREFIXO, desproteger, proteger
 
 LOGGER = logging.getLogger("noc")
 
@@ -29,9 +29,22 @@ class RascunhoWorker(threading.Thread):
 
     def carregar(self):
         self.fila_carregada = None
+        for backup in self.arquivo.parent.glob("rascunho-invalido-*.json"):
+            if time.time() - backup.stat().st_mtime > 30 * 86400:
+                backup.unlink()
         if not self.arquivo.exists():
             return {}, None
-        payload = json.loads(self.arquivo.read_text(encoding="utf-8"))
+        if time.time() - self.arquivo.stat().st_mtime > 30 * 86400:
+            self.arquivo.unlink()
+            return {}, None
+        bruto = self.arquivo.read_bytes()
+        if bruto.startswith(PREFIXO):
+            bruto = desproteger(bruto)
+        else:
+            # Migra atomicamente antes de interpretar imagens ou outros dados.
+            with arquivo_atomico(self.arquivo, encoding=None) as arquivo:
+                arquivo.write(proteger(bruto))
+        payload = json.loads(bruto)
         if not isinstance(payload, dict) or payload.get("versao") not in (1, 2) or not isinstance(payload.get("dados"), dict):
             raise ValueError("Formato de rascunho inválido.")
         dados = {campo: payload["dados"].get(campo, "") for campo in CAMPOS_FORMULARIO}
@@ -60,7 +73,9 @@ class RascunhoWorker(threading.Thread):
             detalhe = str(exc)
             try:
                 backup = self.arquivo.with_name(f"rascunho-invalido-{time.time_ns()}.json")
-                shutil.copy2(self.arquivo, backup)
+                bruto = self.arquivo.read_bytes()
+                with arquivo_atomico(backup, encoding=None) as arquivo:
+                    arquivo.write(bruto if bruto.startswith(PREFIXO) else proteger(bruto))
                 detalhe += f"\nUma cópia do arquivo original foi preservada em {backup.name}."
             except OSError:
                 self.permitir_salvamento = False
@@ -109,8 +124,8 @@ class RascunhoWorker(threading.Thread):
                                        "operacional": estado.get("operacional", {})}
                 cache_imagens = usados
                 self.arquivo.parent.mkdir(parents=True, exist_ok=True)
-                with arquivo_atomico(self.arquivo) as arquivo:
-                    json.dump(payload, arquivo, ensure_ascii=False)
+                with arquivo_atomico(self.arquivo, encoding=None) as arquivo:
+                    arquivo.write(proteger(json.dumps(payload, ensure_ascii=False).encode("utf-8")))
                 self.eventos.put(("rascunho_salvo", revisao, None))
             except Exception as exc:
                 LOGGER.exception("Falha ao salvar rascunho")

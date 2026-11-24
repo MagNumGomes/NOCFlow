@@ -1,6 +1,12 @@
-body { width: 300px; margin: 16px; font: 14px "Segoe UI", sans-serif; color: #172b4d; }
-h1 { font-size: 18px; }
-input, button { box-sizing: border-box; width: 100%; padding: 9px; margin-top: 8px; }
-button { cursor: pointer; }
-p { line-height: 1.4; }
-#status { font-weight: 600; }
+body { width: 320px; margin: 14px; font: 13px "Segoe UI", sans-serif; color: #182230; background: #f6f7f9; }
+h1 { font-size: 16px; margin: 0 0 10px; color: #182230; }
+label { display: block; font-size: 12px; color: #475467; font-weight: 600; margin-bottom: 4px; }
+input, button { box-sizing: border-box; width: 100%; padding: 8px 10px; margin-top: 6px; border-radius: 6px; font: inherit; }
+input { border: 1px solid #d0d5dd; background: #ffffff; color: #182230; outline: none; }
+input:focus { border-color: #215dcc; box-shadow: 0 0 0 2px rgba(33, 93, 204, 0.15); }
+button { cursor: pointer; border: 1px solid #d0d5dd; background: #ffffff; color: #344054; font-weight: 600; transition: background 0.15s; }
+button:hover:not(:disabled) { background: #eef2f6; }
+#assinar { background: #215dcc; border-color: #215dcc; color: #ffffff; margin-top: 8px; }
+#assinar:hover:not(:disabled) { background: #194ba8; }
+p { line-height: 1.4; color: #667085; font-size: 12px; margin: 8px 0 4px; }
+#status { font-weight: 600; color: #182230; min-height: 18px; }

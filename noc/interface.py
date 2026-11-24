@@ -25,7 +25,6 @@ from .atendimento import (
     proxima_acao,
     ticket_valido,
 )
-from .clipboard_windows import copiar_html_texto, copiar_imagem
 from .comunicados import (
     gerar_assunto_email,
     gerar_html_email,
@@ -42,23 +41,24 @@ from .extracao_local import CacheExtracao
 from .historico_atendimento import instante, pendente_operacional, registrar_evento
 from .incidentes import CAMPOS_EVENTO, FilaIncidentes, importar_eventos
 from .incidentes import CAMPOS_FORMULARIO as CAMPOS
+from .infra.clipboard_windows import copiar_html_texto, copiar_imagem
 from .infra.logging_local import configurar_logging
 from .infra.persistencia import ExclusividadeDados
 from .movidesk import MovideskWorker
-from .painel_fila import PainelFila
 from .rascunhos import RascunhoWorker
-from .recortes_email import (
-    CAMPOS_RECORTE,
-    EditorRecortes,
-    VisualizadorImagem,
-    montar_recortes,
-)
 from .regras_operacionais import avaliar_regras
 from .services.evidencias import preparar_miniatura
 from .services.perfis import ler_perfis
 from .tokens_ia import ConsumoIA
 from .ui.comunicacao_view import montar_comunicacao
 from .ui.evidencias_view import montar_evidencias
+from .ui.painel_fila import PainelFila
+from .ui.recortes_email import (
+    CAMPOS_RECORTE,
+    EditorRecortes,
+    VisualizadorImagem,
+    montar_recortes,
+)
 from .ui.tarefas import TarefasUI
 from .versao import __version__
 
@@ -69,7 +69,7 @@ class NOCFlow:
         # antes de iniciar workers que poderiam disparar o coletor cíclico.
         gc.collect()
         self.root = root
-        self.config = config or carregar_config(diretorio_aplicacao())
+        self.config = replace(config or carregar_config(diretorio_aplicacao()), confirmar_ia=self.confirmar_envio_ia)
         self.eventos = queue.Queue()
         self.imagem = None
         self.imagem_extracao = None
@@ -125,7 +125,7 @@ class NOCFlow:
         self.evidencia_escolha = tk.StringVar(root, "Print completo")
         self.evidencia_resumo = tk.StringVar(root, "Sem print")
         self.proxima_acao = tk.StringVar(root)
-        self.conexao_resumo = tk.StringVar(root, "Zabbix: desconectado")
+        self.conexao_resumo = tk.StringVar(root, "○ Zabbix: desconectado")
         self.consumo_ia = ConsumoIA()
         self.resumo_tokens = tk.StringVar(root, self.consumo_ia.resumo(self.config))
 
@@ -144,6 +144,9 @@ class NOCFlow:
         self.root.bind("<Control-n>", lambda _: self.novo_incidente())
         self.root.bind("<Control-Shift-V>", lambda _: self.ler_print())
         self.root.bind("<Control-i>", lambda _: self.importar_clipboard())
+        self.root.bind("<Alt-Key-1>", lambda _: self.selecionar_canal_rapido("WhatsApp"))
+        self.root.bind("<Alt-Key-2>", lambda _: self.selecionar_canal_rapido("Teams"))
+        self.root.bind("<Alt-Key-3>", lambda _: self.selecionar_canal_rapido("E-mail"))
         self.root.bind("<MouseWheel>", self.rolar)
 
         self.movidesk = MovideskWorker(self.config, self.eventos)
@@ -163,12 +166,26 @@ class NOCFlow:
         self.root.configure(background="#f6f7f9")
         estilo.configure(".", font=("Segoe UI", 10), background="#f6f7f9", foreground="#182230")
         estilo.configure("TButton", padding=(10, 6))
-        estilo.configure("Compacto.TButton", padding=(6, 2))
+        estilo.configure("Compacto.TButton", padding=(7, 3))
+        estilo.configure("Canal.TButton", padding=(10, 4))
+        estilo.configure("CanalAtivo.TButton", padding=(10, 4), background="#215dcc", foreground="white", borderwidth=0)
+        estilo.map("CanalAtivo.TButton", background=[("disabled", "#dfe5ed"), ("active", "#194ba8")],
+                   foreground=[("disabled", "#667085")])
         estilo.configure("TEntry", padding=4, fieldbackground="white")
-        estilo.configure("TCombobox", padding=4, fieldbackground="white")
-        estilo.configure("TNotebook.Tab", padding=(16, 7))
+        estilo.map("TEntry", fieldbackground=[("readonly", "white"), ("disabled", "#eef1f5")])
+        estilo.configure("TCombobox", padding=4, fieldbackground="white", background="white")
+        estilo.map("TCombobox",
+                   fieldbackground=[("readonly", "white"), ("disabled", "#eef1f5")],
+                   background=[("readonly", "white"), ("disabled", "#eef1f5")],
+                   foreground=[("readonly", "#182230"), ("disabled", "#667085")])
+        estilo.configure("TNotebook.Tab", padding=(16, 7), background="#e4e7ec", foreground="#475467")
+        estilo.map("TNotebook.Tab",
+                   background=[("selected", "white"), ("active", "#eef2f6")],
+                   foreground=[("selected", "#182230")])
         estilo.configure("Titulo.TLabel", font=("Segoe UI", 16, "bold"))
         estilo.configure("Discreto.TLabel", foreground="#667085", font=("Segoe UI", 9))
+        estilo.configure("Conectado.TLabel", foreground="#15803d", font=("Segoe UI", 9, "bold"))
+        estilo.configure("AlertaConexao.TLabel", foreground="#b45309", font=("Segoe UI", 9, "bold"))
         estilo.configure("Erro.TLabel", foreground="#b42318", font=("Segoe UI", 9))
         estilo.configure("Principal.TButton", background="#215dcc", foreground="white", borderwidth=0)
         estilo.map("Principal.TButton", background=[("disabled", "#dfe5ed"), ("active", "#194ba8")],
@@ -180,11 +197,11 @@ class NOCFlow:
         self.seletor_fila = ttk.Combobox(topo, state="readonly", width=34)
         self.seletor_fila.pack(side="left", fill="x", expand=True, padx=(16, 8))
         self.seletor_fila.bind("<<ComboboxSelected>>", self.selecionar_incidente)
-        self.btn_fila = ttk.Button(topo, text="Fila", width=6, command=self.alternar_fila)
+        self.btn_fila = ttk.Button(topo, text="Fila", command=self.alternar_fila)
         self.btn_fila.pack(side="left", padx=(0, 6))
         self.btn_novo = ttk.Button(topo, text="+ Novo", width=8, command=self.novo_incidente)
         self.btn_novo.pack(side="left", padx=(0, 6))
-        self.btn_mais = ttk.Menubutton(topo, text="⋯", width=4)
+        self.btn_mais = ttk.Menubutton(topo, text="⋯", width=3)
         self.btn_mais.pack(side="left")
         self.menu_mais = tk.Menu(self.btn_mais, tearoff=False)
         self.btn_mais.configure(menu=self.menu_mais)
@@ -217,7 +234,8 @@ class NOCFlow:
 
         conexao = ttk.Frame(self.root, padding=(16, 0, 16, 6))
         conexao.pack(fill="x")
-        ttk.Label(conexao, textvariable=self.conexao_resumo, style="Discreto.TLabel").pack(side="left")
+        self.label_conexao = ttk.Label(conexao, textvariable=self.conexao_resumo, style="Discreto.TLabel")
+        self.label_conexao.pack(side="left")
         self.btn_conectar = ttk.Button(conexao, text="Conectar", style="Compacto.TButton", command=self.conectar_zabbix)
         self.btn_conectar.pack(side="left", padx=(8, 0))
         self.btn_operacao = ttk.Button(conexao, text="Central operacional", style="Compacto.TButton", command=self.abrir_central)
@@ -340,9 +358,24 @@ class NOCFlow:
         elif campo == "severidade":
             entrada = ttk.Combobox(frame, textvariable=self.vars[campo], values=(
                 "Não classificado", "Informação", "Aviso", "Média", "Alta", "Desastre"))
+            entrada.pack(fill="x", pady=(2, 0))
+        elif campo == "link_zabbix":
+            linha_link = ttk.Frame(frame)
+            linha_link.pack(fill="x", pady=(2, 0))
+            entrada = ttk.Entry(linha_link, textvariable=self.vars[campo])
+            entrada.pack(side="left", fill="x", expand=True)
+            self.btn_abrir_zabbix = ttk.Button(
+                linha_link,
+                text="Abrir ↗",
+                style="Compacto.TButton",
+                command=self.abrir_link_zabbix,
+            )
+            self.btn_abrir_zabbix.pack(side="right", padx=(6, 0))
         else:
             entrada = ttk.Entry(frame, textvariable=self.vars[campo])
-        entrada.pack(fill="x", pady=(2, 0))
+            entrada.pack(fill="x", pady=(2, 0))
+        if campo == "situacao":
+            entrada.pack(fill="x", pady=(2, 0))
         entrada.bind("<FocusIn>", lambda _: self.mostrar_campo(entrada))
         self.entradas[campo] = entrada
         aviso = ttk.Label(frame, textvariable=self.erros[campo], style="Erro.TLabel")
@@ -365,12 +398,35 @@ class NOCFlow:
         (self.btn_comunicado if comunicar else self.btn_movidesk).pack(side="right", padx=(12, 0))
         self.agendar_miniatura()
 
+    def selecionar_canal_rapido(self, canal):
+        if self.operacao or self.carregando or self.fechando:
+            return
+        if self.canal.get() != canal:
+            self.canal.set(canal)
+            self.mudar_canal()
+
+    def atualizar_botoes_canal(self):
+        if not hasattr(self, "botoes_canal"):
+            return
+        item = self.fila.obter()
+        copias = item["meta"].get("copias", {}) if item else {}
+        atual = self.canal.get()
+        for canal, botao in self.botoes_canal.items():
+            rotulo = f"{canal} ✓" if copias.get(canal, {}).get("em") else canal
+            estilo = "CanalAtivo.TButton" if canal == atual else "Canal.TButton"
+            botao.configure(text=rotulo, style=estilo)
+
     def mudar_canal(self, _=None):
         for frame in self.campos_canal.values():
             frame.pack_forget()
         self.campos_canal[self.canal.get()].pack(fill="x")
         self.btn_comunicado.configure(
             text="Copiar e-mail" if self.canal.get() == "E-mail" else "Copiar mensagem")
+        if hasattr(self, "controles_evidencia_email"):
+            if self.canal.get() == "E-mail":
+                self.controles_evidencia_email.pack(side="right", padx=(6, 0))
+            else:
+                self.controles_evidencia_email.pack_forget()
         self.mostrar_opcoes_modelo()
         self.atualizar_previews()
 
@@ -678,8 +734,24 @@ class NOCFlow:
     def conectar_zabbix(self):
         identificador = self.iniciar_operacao("conexao", "Conectando ao Zabbix…")
         if identificador is not None:
-            self.conexao_resumo.set("Zabbix: conectando…")
+            self.conexao_resumo.set("◌ Zabbix: conectando…")
+            if hasattr(self, "label_conexao"):
+                self.label_conexao.configure(style="Discreto.TLabel")
             self.movidesk.comandos.put((identificador, {"_conectar": True}))
+
+    def abrir_link_zabbix(self):
+        if self.operacao or self.carregando or self.fechando:
+            return
+        link = self.vars["link_zabbix"].get().strip()
+        if not link:
+            self.informar("Informe o link do evento Zabbix antes de abrir.")
+            return
+        from .configuracao import url_valida
+        if not url_valida(link):
+            self.erros["link_zabbix"].set("Informe um link completo, começando com https:// ou http://.")
+            self.entradas["link_zabbix"].focus_set()
+            return
+        self.executar("abrir_ticket", "Abrindo evento Zabbix no Edge…", lambda: abrir_no_edge(link))
 
     def ler_print(self):
         self.extrair_com_ia(self.config.ia_automatica, usar_clipboard=True)
@@ -736,6 +808,8 @@ class NOCFlow:
         if not hasattr(self, "previa"):
             return
         dados = self.obter_dados()
+        if hasattr(self, "destinatarios"):
+            self.destinatarios.sugerir_por_contexto(dados)
         self.assunto_email.set(gerar_assunto_email(dados, self.modelo_comunicado.get()))
         self.previa.configure(state="normal")
         self.previa.delete("1.0", "end")
@@ -762,6 +836,7 @@ class NOCFlow:
                 self.miniatura_previa = None
                 self.miniatura_previa_chave = None
         self.previa.configure(state="disabled")
+        self.atualizar_botoes_canal()
         item = self.fila.obter()
         copia = item["meta"].get("copias", {}).get(self.canal.get(), {}) if item else {}
         quando = copia.get("em", "")[:19].replace("T", " ")
@@ -808,12 +883,19 @@ class NOCFlow:
         for combo in (self.seletor_fila, self.seletor_canal, self.seletor_modelo):
             with contextlib.suppress(tk.TclError):
                 combo.configure(state="disabled" if ocupado else "readonly")
+        if hasattr(self, "botoes_canal"):
+            for botao in self.botoes_canal.values():
+                with contextlib.suppress(tk.TclError):
+                    botao.configure(state="disabled" if ocupado else "normal")
         with contextlib.suppress(tk.TclError):
             self.btn_mais.configure(state="disabled" if ocupado else "normal")
         self.btn_print.configure(state="disabled" if ocupado or self.imagem is None else "normal")
         self.btn_ampliar.configure(state="disabled" if self.fechando or self.imagem is None else "normal")
         self.seletor_evidencia.configure(state="disabled" if ocupado or self.imagem is None else "readonly")
         self.btn_recortar_email.configure(state="disabled" if ocupado or self.imagem is None else "normal")
+        if hasattr(self, "seletor_evidencia_comunicar"):
+            self.seletor_evidencia_comunicar.configure(state="disabled" if ocupado or self.imagem is None else "readonly")
+            self.btn_recortar_comunicar.configure(state="disabled" if ocupado or self.imagem is None else "normal")
         self.btn_imagem_email.configure(
             state="normal" if not ocupado and self.imagem is not None
             and all(c in self.recortes_email for c in CAMPOS_RECORTE) else "disabled")
@@ -1215,7 +1297,7 @@ class NOCFlow:
 
     def configurar_extensao(self):
         diretorio = self.config.diretorio
-        self.tarefas.enviar("extensao", lambda: preparar_extensao(diretorio), self.mostrar_config_extensao)
+        self.tarefas.enviar("extensao", lambda: preparar_extensao(diretorio, self.config.movidesk_url), self.mostrar_config_extensao)
 
     def mostrar_config_extensao(self, pasta):
         janela = tk.Toplevel(self.root)
@@ -1262,7 +1344,7 @@ class NOCFlow:
         autor = self.config.nome_operador
         def copiar():
             evidencia = (montar_recortes(imagem, caixas) if recortar else imagem) if canal == "E-mail" else None
-            if canal == "E-mail" and evidencia is not None:
+            if canal == "E-mail":
                 copiar_html_texto(texto, gerar_html_email(texto, evidencia), hwnd)
             else:
                 pyperclip.copy(texto)
@@ -1353,6 +1435,39 @@ class NOCFlow:
     def detalhes_erro(self):
         messagebox.showerror("Detalhes", self.ultimo_erro, parent=self.root)
 
+    def confirmar_envio_ia(self, provedor, previa):
+        resposta = queue.Queue(maxsize=1)
+        self.eventos.put(("ia_previa", None, (provedor, previa, resposta)))
+        try:
+            return resposta.get(timeout=120) and not self.fechando
+        except queue.Empty:
+            return False
+
+    def mostrar_previa_ia(self, resultado):
+        provedor, previa, resposta = resultado
+        if self.fechando:
+            resposta.put(False)
+            return
+        janela = tk.Toplevel(self.root)
+        janela.title(f"Confirmar envio externo · {provedor}")
+        janela.transient(self.root)
+        ttk.Label(janela, text="Revise todo o conteúdo abaixo. Envie apenas dados não classificados e autorizados.",
+                  wraplength=720).pack(padx=16, pady=12)
+        texto = tk.Text(janela, width=90, height=25, wrap="word")
+        texto.insert("1.0", previa)
+        texto.configure(state="disabled")
+        texto.pack(padx=16, pady=8, fill="both", expand=True)
+
+        def concluir(aceitar=False):
+            janela.after_cancel(expiracao)
+            resposta.put_nowait(aceitar)
+            janela.destroy()
+
+        ttk.Button(janela, text="Cancelar", command=concluir).pack(side="right", padx=16, pady=12)
+        ttk.Button(janela, text="Confirmar conteúdo e enviar", command=lambda: concluir(True)).pack(side="right", pady=12)
+        janela.protocol("WM_DELETE_WINDOW", concluir)
+        expiracao = janela.after(120000, concluir)
+
     def incidente_do_retorno(self, identificador):
         # Remover é reversível nesta sessão; o retorno acompanha o item até o desfazer.
         while identificador in self.vinculos_retorno:
@@ -1367,7 +1482,9 @@ class NOCFlow:
                 if time.monotonic() >= limite_ciclo:
                     break
                 tipo, identificador, resultado = self.eventos.get_nowait()
-                if tipo == "rascunho_carregado":
+                if tipo == "ia_previa":
+                    self.mostrar_previa_ia(resultado)
+                elif tipo == "rascunho_carregado":
                     if not self.fechando:
                         dados, imagem = resultado
                         self.definir_dados(dados)
@@ -1414,10 +1531,18 @@ class NOCFlow:
                     self.estado_conexao = resultado["estado"]
                     nomes = {"conectado": "conectado", "desconectado": "desconectado", "expirado": "conexão expirada",
                              "sem_resposta": "sem resposta do navegador"}
-                    texto = "Zabbix: " + nomes.get(self.estado_conexao, self.estado_conexao)
+                    icone = "●" if self.estado_conexao == "conectado" else "○" if self.estado_conexao == "desconectado" else "▲"
+                    texto = f"{icone} Zabbix: " + nomes.get(self.estado_conexao, self.estado_conexao)
                     if self.estado_conexao == "conectado" and resultado.get("expira"):
                         texto += " até " + time.strftime("%H:%M", time.localtime(resultado["expira"]))
                     self.conexao_resumo.set(texto)
+                    if hasattr(self, "label_conexao"):
+                        estilo_con = (
+                            "Conectado.TLabel" if self.estado_conexao == "conectado"
+                            else "AlertaConexao.TLabel" if self.estado_conexao in ("expirado", "sem_resposta")
+                            else "Discreto.TLabel"
+                        )
+                        self.label_conexao.configure(style=estilo_con)
                     self.btn_conectar.configure(text="Reconectar" if self.estado_conexao != "desconectado" else "Conectar")
                 elif tipo == "pedido_status" and not self.fechando:
                     item = self.incidente_do_retorno(identificador)
@@ -1661,7 +1786,7 @@ def main():
             messagebox.showerror("Falha na operação", "Consulte o diagnóstico em .noc_data/logs/.", parent=root)
         root.report_callback_exception = falha_callback
         try:
-            preparar_extensao(config.diretorio)
+            preparar_extensao(config.diretorio, config.movidesk_url)
         except Exception:
             # A extensão é opcional: uma configuração inválida não pode impedir o uso do aplicativo.
             logging.getLogger("noc").warning("Não foi possível atualizar a extensão do Edge.", exc_info=True)

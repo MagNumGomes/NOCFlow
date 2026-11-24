@@ -215,7 +215,7 @@ class ConhecimentoIATests(unittest.TestCase):
         def cliente(**kwargs):
             self.assertEqual(kwargs["max_retries"], 0)
             return Groq(**kwargs, http_client=httpx.Client(transport=httpx.MockTransport(transporte)))
-        config = Config(Path("."), groq_api_key="chave-ficticia")
+        config = Config(Path("."), groq_api_key="chave-ficticia", ia_externa=True, confirmar_ia=lambda *_: True)
         with patch("groq.Groq", side_effect=cliente):
             resultado = organizar_relato(config, "VPN não conecta")
         self.assertEqual(resultado["metricas"]["tokens"], 30)

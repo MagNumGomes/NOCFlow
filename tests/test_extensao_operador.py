@@ -80,10 +80,13 @@ class ExtensaoOperadorTests(unittest.TestCase):
         self.assertTrue(resultado["ok"])
         self.assertEqual(resultado["campos"]["tipo"], "preenchido")
         corpo = self.page.locator('textarea').input_value()
-        self.assertNotIn('<br>', corpo)
+        self.assertEqual(corpo.count('<br>'), 1)
+        self.assertIn('data-nocflow-quebra="1"', corpo)
         self.assertNotIn('&nbsp;', corpo)
         self.assertIn('assinatura.png', corpo)
         self.assertIn('alerta.png', corpo)
+        self.assertLess(corpo.index('alerta.png'), corpo.index('data-nocflow-quebra="1"'))
+        self.assertLess(corpo.index('data-nocflow-quebra="1"'), corpo.index('Atenciosamente,'))
 
     def test_nao_preenche_ticket_publico_quando_interno_nao_confirma(self):
         self.page.set_content('''<form><input id="TicketSubject"><button type="button">INTERNO</button>

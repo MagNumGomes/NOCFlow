@@ -1,9 +1,9 @@
-param([switch]$SemAtalho, [switch]$SomentePacote, [string]$PastaSaida = "dist")
+param([switch]$SemAtalho, [switch]$SomentePacote, [string]$PastaSaida = "dist", [string]$PythonBuild = "")
 
 $ErrorActionPreference = "Stop"
 $raiz = $PSScriptRoot
 $pastaDist = if ([System.IO.Path]::IsPathRooted($PastaSaida)) { $PastaSaida } else { Join-Path $raiz $PastaSaida }
-$pythonBuild = Join-Path $raiz ".venv-build\Scripts\python.exe"
+if (-not $PythonBuild) { $PythonBuild = Join-Path $raiz ".venv-build\Scripts\python.exe" }
 
 function Confirmar-Sucesso([string]$etapa) {
     if ($LASTEXITCODE -ne 0) {
@@ -17,7 +17,7 @@ if (-not (Test-Path $pythonBuild)) {
     Confirmar-Sucesso "criar ambiente Python"
 }
 
-& $pythonBuild -m pip install -r (Join-Path $raiz "scripts\requirements-windows.txt") -r (Join-Path $raiz "scripts\requirements-build.txt")
+& $pythonBuild -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r (Join-Path $raiz "scripts\requirements-windows.txt")
 Confirmar-Sucesso "instalar dependencias de build"
 & $pythonBuild -m pip check
 Confirmar-Sucesso "validar dependencias instaladas"
@@ -34,10 +34,20 @@ Confirmar-Sucesso "gerar userscripts Tampermonkey"
 & $pythonBuild -m PyInstaller --noconfirm --clean --distpath $pastaDist --workpath (Join-Path $raiz "build") (Join-Path $raiz "scripts\NOC.spec")
 Confirmar-Sucesso "empacotar aplicativo"
 
+if ($env:NOCFLOW_SIGN_CERT_THUMBPRINT) {
+    $cert = Get-Item "Cert:\CurrentUser\My\$env:NOCFLOW_SIGN_CERT_THUMBPRINT"
+    $assinatura = Set-AuthenticodeSignature -FilePath $executavel -Certificate $cert -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com"
+    if ($assinatura.Status -ne 'Valid') { throw 'Assinatura Authenticode invalida.' }
+}
+if ($env:GITHUB_REF_TYPE -eq 'tag' -and (Get-AuthenticodeSignature $executavel).Status -ne 'Valid') {
+    throw 'Release exige certificado Authenticode provisionado e assinatura valida.'
+}
+& $pythonBuild (Join-Path $raiz "scripts\inventario_release.py") --pacote $destino
+Confirmar-Sucesso "gerar SBOM e proveniencia"
+
 Copy-Item (Join-Path $raiz "scripts\LEIA-ME-executavel.txt") $destino
 Copy-Item (Join-Path $raiz "scripts\Abrir configuracoes.cmd") $destino
 Copy-Item (Join-Path $raiz "README.md") $destino
-Copy-Item (Join-Path $raiz "CHANGELOG.md") $destino
 Copy-Item (Join-Path $raiz "VERSION") $destino
 Copy-Item (Join-Path $raiz "docs") $destino -Recurse -Force
 Copy-Item (Join-Path $raiz "tampermonkey") $destino -Recurse -Force
@@ -61,15 +71,8 @@ $dadosUsuario = Join-Path $env:LOCALAPPDATA "NOCFlow"
 New-Item -ItemType Directory -Path $dadosUsuario -Force | Out-Null
 $envUsuario = Join-Path $dadosUsuario ".env"
 if (-not (Test-Path $envUsuario)) {
-    $envOrigem = Join-Path $raiz ".env"
-    if (-not (Test-Path $envOrigem)) { $envOrigem = Join-Path $raiz ".env.example" }
+    $envOrigem = Join-Path $raiz ".env.example"
     Copy-Item $envOrigem $envUsuario
-}
-$rascunhoOrigem = Join-Path $raiz ".noc_data\rascunho.json"
-$rascunhoDestino = Join-Path $dadosUsuario ".noc_data\rascunho.json"
-if ((Test-Path $rascunhoOrigem) -and -not (Test-Path $rascunhoDestino)) {
-    New-Item -ItemType Directory -Path (Split-Path $rascunhoDestino) -Force | Out-Null
-    Copy-Item $rascunhoOrigem $rascunhoDestino
 }
 
 if (-not $SemAtalho) {
